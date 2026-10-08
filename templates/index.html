@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#FFFFFF">
+  <title>살만하니 - 자취방 인프라 점수</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%231F4E9C'/><text x='16' y='23' font-size='18' font-weight='700' fill='white' text-anchor='middle' font-family='sans-serif'>살</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<header>
+  <a class="logo" href="/">살만하니</a>
+  {% if demo_mode %}
+  <span class="demo-badge">데모 데이터</span>
+  {% endif %}
+</header>
+
+<main>
+
+  <!-- 검색 -->
+  <section class="search">
+    <h1>자취할 집, 주소부터 넣어 보세요</h1>
+    <p class="lead">지하철, 버스, 편의점, 병원까지 걸어서 얼마나 걸리는지 보고 100점 만점으로 매겨요.</p>
+
+    <div class="search-row">
+      <input type="text" id="addr-input"
+             placeholder="예: 서울 마포구 서교동"
+             aria-label="주소"
+             autocomplete="off">
+      <button class="btn-primary" id="search-btn">점수 보기</button>
+    </div>
+
+    <div class="recent-list" id="recent-list" aria-label="최근 검색"></div>
+
+    {% if demo_mode %}
+    <p class="notice">카카오 API 키가 없어 가짜 데이터로 보여 줘요. .env에 KAKAO_API_KEY를 넣으면 실제 주변 시설로 바뀌어요.</p>
+    {% endif %}
+
+    <button type="button" id="weight-toggle" class="weight-toggle" aria-expanded="false">중요도 조절하기</button>
+
+    <div id="weight-panel" class="weight-panel">
+      {% set sliders = [
+        ('transit',     '교통'),
+        ('convenience', '편의시설'),
+        ('food',        '식생활'),
+        ('medical',     '의료'),
+        ('leisure',     '여가·운동'),
+        ('safety',      '야간 안전'),
+      ] %}
+      {% for key, label in sliders %}
+      <div class="weight-item">
+        <label for="w-{{ key }}">{{ label }} <span id="wv-{{ key }}">—</span></label>
+        <input type="range" id="w-{{ key }}" min="5" max="50" step="5">
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="error-box" id="error-box" role="alert"></div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p>주변 시설을 찾는 중이에요</p>
+  </div>
+
+  <!-- 결과 -->
+  <div id="results">
+
+    <!-- 도로명주소판: 이 페이지의 유일한 장식 -->
+    <div class="address-plate" id="result-address"></div>
+
+    <section class="score-hero">
+      <div class="score-number">
+        <span id="score-num">0</span><small>/100</small>
+      </div>
+      <div class="score-info">
+        <div class="grade-badge" id="grade-text"></div>
+        <p class="ai-comment" id="ai-comment"></p>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>항목별 점수</h2>
+      <div class="cat-list" id="cat-grid"></div>
+    </section>
+
+    {% if kakao_js_key %}
+    <section class="block">
+      <h2>지도</h2>
+      <p class="hint">종류별로 가장 가까운 곳만 표시했어요.</p>
+      <div id="map" class="map-box"></div>
+    </section>
+    {% endif %}
+
+    <section class="block">
+      <h2>가까운 시설</h2>
+      <dl class="facility-list" id="facility-list"></dl>
+    </section>
+
+    <section class="block">
+      <h2>다른 집과 비교하기</h2>
+      <p class="hint">가격은 비워 둬도 돼요. 넣으면 한 달에 실제로 드는 돈까지 비교해요.</p>
+      <div class="compare-inputs">
+        {% for n, ph in [(1, '집 1 (지금 본 주소)'), (2, '집 2'), (3, '집 3 (선택)')] %}
+        <div class="compare-entry">
+          <input type="text" id="compare-addr-{{ n }}" placeholder="{{ ph }}" aria-label="집 {{ n }} 주소">
+          <div class="price-row">
+            <label>보증금 <input type="number" id="compare-deposit-{{ n }}" min="0" step="100" inputmode="numeric" placeholder="1000"> 만원</label>
+            <label>월세 <input type="number" id="compare-rent-{{ n }}" min="0" step="1" inputmode="numeric" placeholder="50"> 만원</label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <button class="btn-secondary" id="compare-btn">비교하기</button>
+
+      <div class="compare-results" id="compare-results">
+        <table class="compare-table">
+          <thead>
+            <tr id="compare-thead"></tr>
+          </thead>
+          <tbody id="compare-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div><!-- /#results -->
+
+</main>
+
+{% if kakao_js_key %}
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={{ kakao_js_key }}&autoload=false"></script>
+{% endif %}
+<script src="/static/js/app.js"></script>
+</body>
+</html>
