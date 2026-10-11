@@ -10,7 +10,8 @@ DATA_GO_KR_API_KEY가 없으면 데모(Mock) 데이터를 반환한다.
 
 import os
 import math
-import requests
+
+from kakao import FetchError, fetch_json, _mock_facilities
 
 API_KEY = os.getenv("DATA_GO_KR_API_KEY", "")
 
@@ -33,21 +34,22 @@ def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> int:
 def search_bus_stops(lat: float, lng: float, radius: int = TAGO_FIXED_RADIUS) -> list:
     """주변 버스정류장 → [{'name':..., 'distance':..., 'address':...}] (kakao.py와 같은 형태)"""
     if not API_KEY:
-        from kakao import _mock_facilities  # 데모 모드에서만 필요 (순환 import 방지)
         return _mock_facilities(lat, lng, "bus", radius)
 
-    try:
-        res = requests.get(ENDPOINT, params={
-            "serviceKey": API_KEY,
-            "gpsLati": lat,
-            "gpsLong": lng,
-            "numOfRows": 50,
-            "pageNo": 1,
-            "_type": "json",
-        }, timeout=5)
-        body = res.json().get("response", {}).get("body", {})
-    except Exception:
-        return []
+    data = fetch_json(ENDPOINT, {
+        "serviceKey": API_KEY,
+        "gpsLati": lat,
+        "gpsLong": lng,
+        "numOfRows": 50,
+        "pageNo": 1,
+        "_type": "json",
+    })
+    resp = data.get("response", {})
+    code = resp.get("header", {}).get("resultCode")
+    if code not in (None, "00"):  # 트래픽 초과 등은 200 + 에러코드로 온다
+        raise FetchError(f"TAGO resultCode={code}")
+    body = resp.get("body", {})
+    # 서울처럼 TAGO가 안 다루는 지역은 정상 응답에 0건 — 이건 실패가 아니다.
 
     # totalCount가 0이면 items가 빈 문자열로 온다. 1건이면 dict, 여러 건이면 list.
     items = body.get("items") or {}
@@ -87,6 +89,20 @@ if __name__ == "__main__":
 
     # 4) 반경 밖 정류소는 걸러지는지 (좌표만 있고 거리 필드는 없는 응답 형태)
     assert _haversine(37.4979, 127.0276, 37.5100, 127.0276) > TAGO_FIXED_RADIUS
+
+    # 5) API 실패는 '정류장 0곳'이 아니라 FetchError여야 한다 (조용히 0곳 → 66점/70점 흔들림 버그)
+    import kakao, requests
+    _real_get = requests.get
+    def _boom(*a, **k): raise requests.ConnectionError("down")
+    kakao.requests.get, _key = _boom, API_KEY
+    API_KEY = API_KEY or "x"
+    try:
+        search_bus_stops(36.3575, 127.3068)
+        raise AssertionError("실패를 삼켰다")
+    except FetchError:
+        pass
+    finally:
+        kakao.requests.get, API_KEY = _real_get, _key
 
     print(f"OK - 위도1도 {_haversine(37.0,127.0,38.0,127.0)}m / 강남역~역삼역 {d}m")
 

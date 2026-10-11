@@ -81,31 +81,43 @@ def _keyword_search_coords(address: str) -> dict | None:
         return None
 
 
+class FetchError(Exception):
+    """외부 API 호출 실패. 빈 목록으로 삼키면 '시설 0곳'으로 점수가 깎이므로 위로 올린다.
+    (실제로 버스 API가 한 번 실패해서 같은 주소가 66점 → 70점으로 바뀌었다.)"""
+
+
+def fetch_json(url: str, params: dict, headers: dict | None = None) -> dict:
+    # ponytail: 1회 재시도만. 공공 API가 자주 흔들리면 백오프나 캐시를 붙인다.
+    for _ in range(2):
+        try:
+            res = requests.get(url, headers=headers, params=params, timeout=5)
+            res.raise_for_status()
+            return res.json()
+        except (requests.RequestException, ValueError) as e:
+            err = e
+    raise FetchError(f"{url} 호출 실패: {err}")
+
+
 def _paged_search(url: str, params: dict) -> list:
     """카테고리·키워드 검색 공통 페이징 (최대 3페이지 = 45건)"""
     results = []
     page = 1
     while True:
-        try:
-            res = requests.get(url, headers=HEADERS,
-                               params={**params, "size": 15, "page": page}, timeout=5)
-            data = res.json()
-            for d in data.get("documents", []):
-                dist = d.get("distance")
-                if dist in (None, ""):
-                    continue  # 거리 없는 결과는 점수 계산에 못 쓴다 (0으로 넣으면 바로 앞인 척함)
-                results.append({
-                    "name": d["place_name"],
-                    "distance": int(dist),
-                    "address": d.get("road_address_name", ""),
-                    "lat": float(d["y"]),
-                    "lng": float(d["x"]),
-                })
-            if data.get("meta", {}).get("is_end") or page >= 3:
-                break
-            page += 1
-        except Exception:
+        data = fetch_json(url, {**params, "size": 15, "page": page}, HEADERS)
+        for d in data.get("documents", []):
+            dist = d.get("distance")
+            if dist in (None, ""):
+                continue  # 거리 없는 결과는 점수 계산에 못 쓴다 (0으로 넣으면 바로 앞인 척함)
+            results.append({
+                "name": d["place_name"],
+                "distance": int(dist),
+                "address": d.get("road_address_name", ""),
+                "lat": float(d["y"]),
+                "lng": float(d["x"]),
+            })
+        if data.get("meta", {}).get("is_end") or page >= 3:
             break
+        page += 1
 
     return results
 
