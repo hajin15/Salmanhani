@@ -29,6 +29,8 @@ app.secret_key = os.getenv("SECRET_KEY", "salmanhi_dev_key")
 KAKAO_API_KEY = os.getenv("KAKAO_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
+FETCH_FAIL_MSG = "주변 시설 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요."
+
 
 @app.route("/")
 def index():
@@ -58,8 +60,11 @@ def analyze():
     lat, lng = coords["lat"], coords["lng"]
     is_demo = coords.get("is_demo", not bool(KAKAO_API_KEY))
 
-    # 2. 주변 시설 조회
-    facilities = _get_facilities(lat, lng)
+    # 2. 주변 시설 조회 — 실패를 '0곳'으로 치면 틀린 점수가 나가므로 차라리 다시 시도하게 한다
+    try:
+        facilities = _get_facilities(lat, lng)
+    except kakao.FetchError:
+        return jsonify({"error": FETCH_FAIL_MSG}), 503
 
     # 3. 점수 계산
     result = scoring.calculate(facilities, weights)
@@ -106,8 +111,12 @@ def compare():
             results.append({"address": addr, "error": "주소를 찾을 수 없어요."})
             continue
 
-        facilities = _get_facilities(coords["lat"], coords["lng"])
-        res = scoring.calculate(facilities, weights)
+        try:
+            facilities = _get_facilities(coords["lat"], coords["lng"])
+        except kakao.FetchError:
+            results.append({"address": addr, "error": FETCH_FAIL_MSG})
+            continue
+        res =scoring.calculate(facilities, weights)
         g = scoring.grade(res["total"])
 
         results.append({
