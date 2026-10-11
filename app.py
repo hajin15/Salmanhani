@@ -24,7 +24,7 @@ import bus
 import scoring
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "salmanhi_dev_key")
+app.secret_key = os.getenv("SECRET_KEY", "salmanhani_dev_key")
 
 KAKAO_API_KEY = os.getenv("KAKAO_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

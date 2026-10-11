@@ -111,7 +111,7 @@ async function runAnalyze(address) {
 
 // ── 최근 검색 ─────────────────────────────────────────────────────
 // 이 브라우저에만 남는다. 사파리 개인정보 모드 등에서 localStorage가 막히면 조용히 생략.
-const RECENT_KEY = 'salmanhi.recent';
+const RECENT_KEY = 'salmanhani.recent';
 const RECENT_MAX = 5;
 
 function loadRecent() {
