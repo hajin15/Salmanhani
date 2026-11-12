@@ -19,7 +19,7 @@
 | 구분 | 사용 |
 |------|------|
 | 백엔드 | Python, Flask |
-| 프론트엔드 | HTML, CSS, Vanilla JS |
+| 프론트엔드 | React + Vite, Emotion, GSAP, Chart.js, Pretendard |
 | 외부 API | 카카오 로컬(주소→좌표, 장소 검색), 카카오맵 JS SDK, 공공데이터포털 TAGO 버스정류소, OpenAI |
 
 ## 점수 계산 방식
@@ -42,8 +42,11 @@
 ```bash
 pip install -r requirements.txt
 cp .env.example .env   # 키 입력
+cd frontend && npm install && npm run build && cd ..
 python app.py          # http://localhost:5000
 ```
+
+화면을 고치는 중에는 Flask를 켜 둔 채로 `cd frontend && npm run dev`를 실행하고 http://localhost:5173 에서 보면 저장할 때마다 바로 반영됩니다. (`/api` 요청은 Flask로 넘어갑니다.)
 
 API 키가 없어도 실행됩니다. 카카오 키가 없으면 데모 데이터로, 공공데이터 키가 없으면 버스정류장만 데모 데이터로 동작합니다.
 
@@ -58,10 +61,13 @@ API 키가 없어도 실행됩니다. 카카오 키가 없으면 데모 데이�
 ## 파일 구조
 
 ```
-app.py          Flask 라우트 (/, /api/analyze, /api/compare)
+app.py          Flask 라우트 (/, /api/config, /api/analyze, /api/compare)
 kakao.py        카카오 주소 변환·카테고리별 장소 검색
 bus.py          TAGO 버스정류장 조회, 거리 계산
 scoring.py      항목별 점수·가중치·등급 계산
-templates/      index.html
-static/         css, js (지도·비교·최근 검색 등 화면 로직)
+frontend/
+  src/App.jsx               검색 상태·API 호출
+  src/components/           SearchSection, Results, CategoryChart, KakaoMap, Compare
+  src/styles.jsx            색 토큰·공용 Emotion 컴포넌트
+  src/lib.js                상수·최근 검색·가격 계산
 ```
