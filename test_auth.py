@@ -94,7 +94,36 @@ def test_history():
         assert conn.execute("SELECT COUNT(*) FROM history WHERE user_id = ?", (uid,)).fetchone()[0] == 0
 
 
+def test_review_fixes():
+    # SECRET_KEY 미설정이면 공개된 기본값을 쓰지 않는다
+    assert app.secret_key != "salmanhani_dev_key"
+
+    # 문자열이 아닌 입력은 500이 아니라 400
+    c = client()
+    assert c.post("/api/signup", json={"email": 1, "password": 12345678}).status_code == 400
+    assert c.post("/api/login", json={"email": "a@b.c", "password": 12345678}).status_code == 401
+    assert c.post("/api/signup", json=[1, 2]).status_code == 400
+
+    # 도로명주소가 빈 문자열이어도 입력한 주소로 저장 (빈 주소끼리 한 줄로 합쳐지지 않게)
+    signup(c, "blank@test.com")
+    orig = appmod.kakao.get_coords
+    appmod.kakao.get_coords = lambda a: {"lat": 37.55, "lng": 126.92, "road_address": ""}
+    try:
+        assert analyze(c, "어딘가 1번지")["address"] == "어딘가 1번지"
+    finally:
+        appmod.kakao.get_coords = orig
+    assert history(c)[0]["address"] == "어딘가 1번지"
+
+    # DB_PATH가 없으면 실행 위치가 아니라 프로젝트 폴더 기준
+    saved = os.environ.pop("DB_PATH")
+    try:
+        assert appmod.db.db_path() == os.path.join(os.path.dirname(os.path.abspath(appmod.db.__file__)), "salmanhi.db")
+    finally:
+        os.environ["DB_PATH"] = saved
+
+
 if __name__ == "__main__":
     test_account()
     test_history()
+    test_review_fixes()
     print("ok")

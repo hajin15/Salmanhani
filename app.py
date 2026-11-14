@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import re
+import secrets
 
 from flask import session
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -31,8 +32,13 @@ import db
 
 # 화면은 React(frontend/)로 만들고 `npm run build` 결과(frontend/dist)를 그대로 서빙한다
 app = Flask(__name__, static_folder="frontend/dist", static_url_path="")
-# 배포 시 SECRET_KEY 필수: 기본값이 공개돼 있으면 남의 로그인 쿠키를 만들 수 있다
-app.secret_key = os.getenv("SECRET_KEY", "salmanhani_dev_key")
+# 로그인 쿠키 서명 키. 코드에 박힌 기본값을 쓰면 누구나 남의 쿠키를 만들 수 있으므로,
+# 없으면 실행할 때마다 무작위 키를 만든다 (대신 서버를 다시 켜면 모두 로그아웃된다).
+app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
+if not os.getenv("SECRET_KEY"):
+    print("⚠️  SECRET_KEY가 없어 임시 키를 씁니다. 배포할 땐 .env에 SECRET_KEY를 꼭 넣으세요.")
+# 다른 사이트에서 보낸 요청에는 로그인 쿠키를 싣지 않는다 (CSRF 완화)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 db.init()
 
 KAKAO_API_KEY = os.getenv("KAKAO_API_KEY", "")
@@ -73,17 +79,24 @@ def current_user_id() -> int | None:
 
 
 def _body() -> dict:
-    return request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+
+def _str(data: dict, key: str) -> str:
+    """문자열이 아닌 값(숫자·null·목록)은 빈 문자열로 → 500 대신 형식 오류로 처리된다"""
+    v = data.get(key)
+    return v if isinstance(v, str) else ""
 
 
 def _email(data: dict) -> str:
-    return (data.get("email") or "").strip().lower()
+    return _str(data, "email").strip().lower()
 
 
 @app.route("/api/signup", methods=["POST"])
 def signup():
     data = _body()
-    email, pw = _email(data), data.get("password") or ""
+    email, pw = _email(data), _str(data, "password")
     if not EMAIL_RE.match(email):
         return jsonify({"error": "이메일 형식이 올바르지 않아요."}), 400
     if len(pw) < PW_MIN:
@@ -101,7 +114,7 @@ def login():
     data = _body()
     email = _email(data)
     user = db.get_user_by_email(email)
-    if not user or not check_password_hash(user["password_hash"], data.get("password") or ""):
+    if not user or not check_password_hash(user["password_hash"], _str(data, "password")):
         return jsonify({"error": LOGIN_FAIL_MSG}), 401
     session.clear()
     session["user_id"] = user["id"]
@@ -130,9 +143,9 @@ def change_password():
     if not uid:
         return jsonify({"error": "로그인이 필요해요."}), 401
     data = _body()
-    if not _check_password(uid, data.get("current")):
+    if not _check_password(uid, _str(data, "current")):
         return jsonify({"error": "현재 비밀번호가 맞지 않아요."}), 401
-    new = data.get("new") or ""
+    new = _str(data, "new")
     if len(new) < PW_MIN:
         return jsonify({"error": f"비밀번호는 {PW_MIN}자 이상이어야 해요."}), 400
     db.set_password(uid, generate_password_hash(new))
@@ -144,7 +157,7 @@ def delete_account():
     uid = current_user_id()
     if not uid:
         return jsonify({"error": "로그인이 필요해요."}), 401
-    if not _check_password(uid, _body().get("password")):
+    if not _check_password(uid, _str(_body(), "password")):
         return jsonify({"error": "비밀번호가 맞지 않아요."}), 401
     db.delete_user(uid)  # 기록·즐겨찾기는 ON DELETE CASCADE로 같이 지워진다
     session.clear()
@@ -214,7 +227,7 @@ def analyze():
     ai_comment = _ai_comment(result) if OPENAI_API_KEY else _rule_comment(result)
 
     # 5. 로그인 상태면 기록에 남긴다 (화면에 보이는 주소 그대로 → 같은 곳을 다르게 써도 한 줄)
-    shown_address = coords.get("road_address", address)
+    shown_address = coords.get("road_address") or address  # 빈 문자열이면 입력값
     uid = current_user_id()
     if uid:
         db.save_history(uid, shown_address, result["total"], g["grade"])
@@ -266,7 +279,7 @@ def compare():
         g = scoring.grade(res["total"])
 
         results.append({
-            "address": coords.get("road_address", addr),
+            "address": coords.get("road_address") or addr,
             "total": res["total"],
             "grade": g,
             "categories": res["categories"],

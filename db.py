@@ -27,8 +27,13 @@ CREATE TABLE IF NOT EXISTS history (
 """
 
 
+def db_path() -> str:
+    """실행 위치와 상관없이 프로젝트 폴더의 salmanhi.db (다른 폴더에서 켜면 빈 DB가 새로 생기던 문제)"""
+    return os.getenv("DB_PATH") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "salmanhi.db")
+
+
 def connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(os.getenv("DB_PATH", "salmanhi.db"))
+    conn = sqlite3.connect(db_path())
     conn.row_factory = sqlite3.Row
     # SQLite는 연결마다 켜야 ON DELETE CASCADE가 동작한다 (안 켜면 탈퇴해도 기록이 남는다)
     conn.execute("PRAGMA foreign_keys = ON")

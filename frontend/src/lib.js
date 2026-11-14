@@ -23,14 +23,20 @@ export const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce
 export const dur = (s) => (REDUCED_MOTION ? 0 : s);
 
 // 서버 에러 응답({error})도 그대로 돌려줘서 화면에서 메시지를 보여 줄 수 있게 한다
+// 네트워크 끊김·서버 500(HTML) 같은 경우도 던지지 않고 {ok:false, data:{error}}로 돌려준다
+// → 부르는 쪽은 에러 메시지만 보여 주면 된다.
 export async function api(method, url, body) {
-  const res = await fetch(url, {
-    method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json();
-  return { ok: res.ok && !data.error, data };
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json();
+    return { ok: res.ok && !data.error, data };
+  } catch {
+    return { ok: false, data: { error: '서버와 연결할 수 없어요. 잠시 후 다시 시도해주세요.' } };
+  }
 }
 
 export const postJSON = (url, body) => api('POST', url, body);
