@@ -151,6 +151,34 @@ def delete_account():
     return jsonify({"ok": True})
 
 
+@app.route("/api/history")
+def list_history():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "로그인이 필요해요."}), 401
+    return jsonify({"items": db.list_history(uid, request.args.get("favorite") == "1")})
+
+
+@app.route("/api/history/<int:hid>/favorite", methods=["POST"])
+def favorite_history(hid):
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "로그인이 필요해요."}), 401
+    if not db.set_favorite(uid, hid, bool(_body().get("on"))):
+        return jsonify({"error": "기록을 찾을 수 없어요."}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/history/<int:hid>", methods=["DELETE"])
+def delete_history(hid):
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "로그인이 필요해요."}), 401
+    if not db.delete_history(uid, hid):
+        return jsonify({"error": "기록을 찾을 수 없어요."}), 404
+    return jsonify({"ok": True})
+
+
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
     """
@@ -185,8 +213,14 @@ def analyze():
     # 4. AI 한줄평 (OpenAI 키 있을 때만)
     ai_comment = _ai_comment(result) if OPENAI_API_KEY else _rule_comment(result)
 
+    # 5. 로그인 상태면 기록에 남긴다 (화면에 보이는 주소 그대로 → 같은 곳을 다르게 써도 한 줄)
+    shown_address = coords.get("road_address", address)
+    uid = current_user_id()
+    if uid:
+        db.save_history(uid, shown_address, result["total"], g["grade"])
+
     return jsonify({
-        "address": coords.get("road_address", address),
+        "address": shown_address,
         "lat": lat,
         "lng": lng,
         "is_demo": is_demo,

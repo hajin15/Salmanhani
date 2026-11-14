@@ -52,6 +52,49 @@ def test_account():
     assert c.post("/api/login", json={"email": "user@test.com", "password": "newpass123"}).status_code == 401
 
 
+def analyze(c, address):
+    r = c.post("/api/analyze", json={"address": address})
+    assert r.status_code == 200, r.json
+    return r.json
+
+
+def history(c, fav=False):
+    return c.get("/api/history" + ("?favorite=1" if fav else "")).json["items"]
+
+
+def test_history():
+    assert client().get("/api/history").status_code == 401
+
+    c = client()
+    signup(c, "hist@test.com")
+    addr = analyze(c, "서울 마포구 서교동")["address"]
+    analyze(c, "서울 마포구 서교동")
+    items = history(c)
+    assert len(items) == 1 and items[0]["address"] == addr, items
+    hid = items[0]["id"]
+
+    assert c.post(f"/api/history/{hid}/favorite", json={"on": True}).status_code == 200
+    analyze(c, "서울 마포구 서교동")
+    assert history(c)[0]["favorite"] is True
+    analyze(c, "서울 노원구 상계동")
+    assert len(history(c)) == 2 and len(history(c, fav=True)) == 1
+
+    other = client()
+    signup(other, "other@test.com")
+    assert other.post(f"/api/history/{hid}/favorite", json={"on": False}).status_code == 404
+    assert other.delete(f"/api/history/{hid}").status_code == 404
+    assert history(c, fav=True)[0]["id"] == hid
+
+    assert c.delete(f"/api/history/{hid}").status_code == 200
+    assert len(history(c)) == 1
+
+    uid = appmod.db.get_user_by_email("hist@test.com")["id"]
+    c.delete("/api/me", json={"password": PW})
+    with appmod.db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM history WHERE user_id = ?", (uid,)).fetchone()[0] == 0
+
+
 if __name__ == "__main__":
     test_account()
+    test_history()
     print("ok")
