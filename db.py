@@ -80,16 +80,19 @@ def delete_user(user_id: int):
 
 # ─── 분석 기록·즐겨찾기 ─────────────────────────────────────────────
 
-def save_history(user_id: int, address: str, total: int, grade: str):
-    """같은 주소를 다시 분석하면 새 행 대신 점수·시각만 갱신 (즐겨찾기는 그대로)"""
+def save_history(user_id: int, address: str, total: int, grade: str) -> tuple[int, bool]:
+    """같은 주소를 다시 분석하면 새 행 대신 점수·시각만 갱신 (즐겨찾기는 그대로).
+    (기록 id, 즐겨찾기 여부) 반환 → 결과 화면의 ☆ 버튼이 쓴다"""
     with connect() as conn:
-        conn.execute(
+        row = conn.execute(
             """INSERT INTO history (user_id, address, total, grade) VALUES (?, ?, ?, ?)
                ON CONFLICT (user_id, address) DO UPDATE SET
                  total = excluded.total, grade = excluded.grade,
-                 created_at = datetime('now', 'localtime')""",
+                 created_at = datetime('now', 'localtime')
+               RETURNING id, favorite""",
             (user_id, address, total, grade),
-        )
+        ).fetchone()
+    return row["id"], bool(row["favorite"])
 
 
 def list_history(user_id: int, favorite_only: bool = False) -> list[dict]:

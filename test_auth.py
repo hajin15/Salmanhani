@@ -122,8 +122,22 @@ def test_review_fixes():
         os.environ["DB_PATH"] = saved
 
 
+def test_favorite_from_result():
+    # 비로그인: 결과에 기록 id가 없다 → 화면에 ☆ 버튼을 안 띄운다
+    assert analyze(client(), "서울 마포구 서교동").get("history_id") is None
+
+    c = client()
+    signup(c, "star@test.com")
+    r = analyze(c, "서울 마포구 서교동")
+    assert r["history_id"] and r["favorite"] is False
+    assert c.post(f"/api/history/{r['history_id']}/favorite", json={"on": True}).status_code == 200
+    r2 = analyze(c, "서울 마포구 서교동")
+    assert r2["history_id"] == r["history_id"] and r2["favorite"] is True
+
+
 if __name__ == "__main__":
     test_account()
     test_history()
     test_review_fixes()
+    test_favorite_from_result()
     print("ok")

@@ -229,8 +229,7 @@ def analyze():
     # 5. 로그인 상태면 기록에 남긴다 (화면에 보이는 주소 그대로 → 같은 곳을 다르게 써도 한 줄)
     shown_address = coords.get("road_address") or address  # 빈 문자열이면 입력값
     uid = current_user_id()
-    if uid:
-        db.save_history(uid, shown_address, result["total"], g["grade"])
+    history_id, favorite = db.save_history(uid, shown_address, result["total"], g["grade"]) if uid else (None, False)
 
     return jsonify({
         "address": shown_address,
@@ -244,6 +243,8 @@ def analyze():
         "ai_comment": ai_comment,
         "facilities_summary": _facilities_summary(facilities),
         "pins": _map_pins(facilities),
+        "history_id": history_id,  # 비로그인이면 None → 화면에 ☆ 버튼 없음
+        "favorite": favorite,
     })
 
 

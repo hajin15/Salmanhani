@@ -1,9 +1,9 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import styled from '@emotion/styled';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { Block, Hint, color, mobile } from '../styles.jsx';
-import { dur } from '../lib.js';
+import { api, dur } from '../lib.js';
 import CategoryChart from './CategoryChart.jsx';
 import KakaoMap from './KakaoMap.jsx';
 
@@ -46,6 +46,7 @@ export default function Results({ data, kakaoKey }) {
           {data.is_demo && <small>가짜 데이터</small>}
         </span>
       </Plate>
+      {data.history_id && <FavoriteButton key={data.history_id} id={data.history_id} initial={data.favorite} />}
 
       <Hero data-reveal>
         <Score>
@@ -86,6 +87,38 @@ export default function Results({ data, kakaoKey }) {
 }
 
 // 도로명주소판: 파란 판, 흰 글씨, 안쪽 흰 테두리
+// 로그인 상태에서만 보인다 (비로그인이면 history_id가 없다)
+function FavoriteButton({ id, initial }) {
+  const [on, setOn] = useState(initial);
+  const [busy, setBusy] = useState(false);
+
+  async function toggle() {
+    setBusy(true);
+    const { ok, data } = await api('POST', `/api/history/${id}/favorite`, { on: !on });
+    setBusy(false);
+    if (ok) setOn(!on); else alert(data.error);
+  }
+
+  return (
+    <Fav onClick={toggle} disabled={busy} aria-pressed={on}>
+      {on ? '★ 즐겨찾기됨' : '☆ 즐겨찾기'}
+    </Fav>
+  );
+}
+
+const Fav = styled.button`
+  display: block;
+  margin-top: 10px;
+  font: inherit;
+  font-size: 14px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: ${color.plate};
+  &:disabled { opacity: 0.5; }
+`;
+
 const Plate = styled.div`
   display: inline-block;
   max-width: 100%;
