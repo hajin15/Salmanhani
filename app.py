@@ -11,7 +11,7 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
 # kakao/scoring보다 먼저 호출해야 한다.
@@ -23,7 +23,8 @@ import kakao
 import bus
 import scoring
 
-app = Flask(__name__)
+# 화면은 React(frontend/)로 만들고 `npm run build` 결과(frontend/dist)를 그대로 서빙한다
+app = Flask(__name__, static_folder="frontend/dist", static_url_path="")
 app.secret_key = os.getenv("SECRET_KEY", "salmanhani_dev_key")
 
 KAKAO_API_KEY = os.getenv("KAKAO_API_KEY", "")
@@ -34,9 +35,18 @@ FETCH_FAIL_MSG = "주변 시설 정보를 불러오지 못했어요. 잠시 후 
 
 @app.route("/")
 def index():
-    return render_template("index.html",
-                           demo_mode=not bool(KAKAO_API_KEY),
-                           kakao_js_key=os.getenv("KAKAO_JS_KEY", ""))
+    if not os.path.exists(os.path.join(app.static_folder, "index.html")):
+        return "화면이 아직 빌드되지 않았어요. frontend 폴더에서 npm run build를 실행하세요.", 503
+    return app.send_static_file("index.html")
+
+
+@app.route("/api/config")
+def config():
+    """화면이 켜질 때 읽는 설정 (카카오맵 JS 키는 원래 브라우저에 공개되는 키다)"""
+    return jsonify({
+        "demo_mode": not bool(KAKAO_API_KEY),
+        "kakao_js_key": os.getenv("KAKAO_JS_KEY", ""),
+    })
 
 
 @app.route("/api/analyze", methods=["POST"])
