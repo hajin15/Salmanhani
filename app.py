@@ -19,13 +19,21 @@ from dotenv import load_dotenv
 # 이 줄이 아래로 내려가면 .env에 키를 넣어도 kakao.py는 빈 키를 들고 데모 데이터를 반환한다.
 load_dotenv()
 
+import re
+
+from flask import session
+from werkzeug.security import check_password_hash, generate_password_hash
+
 import kakao
 import bus
 import scoring
+import db
 
 # 화면은 React(frontend/)로 만들고 `npm run build` 결과(frontend/dist)를 그대로 서빙한다
 app = Flask(__name__, static_folder="frontend/dist", static_url_path="")
+# 배포 시 SECRET_KEY 필수: 기본값이 공개돼 있으면 남의 로그인 쿠키를 만들 수 있다
 app.secret_key = os.getenv("SECRET_KEY", "salmanhani_dev_key")
+db.init()
 
 KAKAO_API_KEY = os.getenv("KAKAO_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -47,6 +55,100 @@ def config():
         "demo_mode": not bool(KAKAO_API_KEY),
         "kakao_js_key": os.getenv("KAKAO_JS_KEY", ""),
     })
+
+
+# ─── 회원 ───────────────────────────────────────────────────────────
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PW_MIN = 8
+LOGIN_FAIL_MSG = "이메일 또는 비밀번호가 맞지 않아요."
+
+
+def current_user_id() -> int | None:
+    """세션의 user_id. 탈퇴 등으로 없어진 계정이면 None"""
+    uid = session.get("user_id")
+    if uid is None or db.get_user(uid) is None:
+        return None
+    return uid
+
+
+def _body() -> dict:
+    return request.get_json(silent=True) or {}
+
+
+def _email(data: dict) -> str:
+    return (data.get("email") or "").strip().lower()
+
+
+@app.route("/api/signup", methods=["POST"])
+def signup():
+    data = _body()
+    email, pw = _email(data), data.get("password") or ""
+    if not EMAIL_RE.match(email):
+        return jsonify({"error": "이메일 형식이 올바르지 않아요."}), 400
+    if len(pw) < PW_MIN:
+        return jsonify({"error": f"비밀번호는 {PW_MIN}자 이상이어야 해요."}), 400
+    uid = db.create_user(email, generate_password_hash(pw))
+    if uid is None:
+        return jsonify({"error": "이미 가입된 이메일이에요."}), 409
+    session.clear()
+    session["user_id"] = uid
+    return jsonify({"email": email}), 201
+
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    data = _body()
+    email = _email(data)
+    user = db.get_user_by_email(email)
+    if not user or not check_password_hash(user["password_hash"], data.get("password") or ""):
+        return jsonify({"error": LOGIN_FAIL_MSG}), 401
+    session.clear()
+    session["user_id"] = user["id"]
+    return jsonify({"email": email})
+
+
+@app.route("/api/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/me", methods=["GET"])
+def me():
+    uid = current_user_id()
+    return jsonify({"email": db.get_user(uid)["email"] if uid else None})
+
+
+def _check_password(uid: int, pw: str) -> bool:
+    return check_password_hash(db.get_user(uid)["password_hash"], pw or "")
+
+
+@app.route("/api/password", methods=["POST"])
+def change_password():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "로그인이 필요해요."}), 401
+    data = _body()
+    if not _check_password(uid, data.get("current")):
+        return jsonify({"error": "현재 비밀번호가 맞지 않아요."}), 401
+    new = data.get("new") or ""
+    if len(new) < PW_MIN:
+        return jsonify({"error": f"비밀번호는 {PW_MIN}자 이상이어야 해요."}), 400
+    db.set_password(uid, generate_password_hash(new))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/me", methods=["DELETE"])
+def delete_account():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "로그인이 필요해요."}), 401
+    if not _check_password(uid, _body().get("password")):
+        return jsonify({"error": "비밀번호가 맞지 않아요."}), 401
+    db.delete_user(uid)  # 기록·즐겨찾기는 ON DELETE CASCADE로 같이 지워진다
+    session.clear()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/analyze", methods=["POST"])
