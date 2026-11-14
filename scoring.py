@@ -48,22 +48,22 @@ def _score_transit(facilities: dict) -> float:
     d = _closest(subway)
     if d is None:
         subway_score = 0.0
-    elif d <= 300:
+    elif d <= 250:
         subway_score = 1.0
-    elif d <= 500:
-        subway_score = 0.90
-    elif d <= 800:
-        subway_score = 0.75
-    elif d <= 1200:
-        subway_score = 0.55
-    elif d <= 1800:
-        subway_score = 0.30
+    elif d <= 400:
+        subway_score = 0.85
+    elif d <= 600:
+        subway_score = 0.65
+    elif d <= 900:
+        subway_score = 0.45
+    elif d <= 1300:
+        subway_score = 0.25
     else:
-        subway_score = 0.10
+        subway_score = 0.05
 
     # 버스 보너스 (300m 이내 정류장 수)
     bus_count = _count_within(bus, 300)
-    bus_bonus = min(bus_count * 0.06, 0.20)
+    bus_bonus = min(bus_count * 0.04, 0.15)
 
     return min(subway_score + bus_bonus, 1.0)
 
@@ -76,31 +76,31 @@ def _score_convenience(facilities: dict) -> float:
     d_conv = _closest(conv)
     d_mart = _closest(mart)
 
-    # 편의점 (0~0.7)
+    # 편의점 (0~0.6)
     if d_conv is None:
         cs = 0.0
-    elif d_conv <= 150:
-        cs = 0.70
-    elif d_conv <= 300:
+    elif d_conv <= 100:
         cs = 0.60
-    elif d_conv <= 600:
-        cs = 0.45
+    elif d_conv <= 200:
+        cs = 0.50
+    elif d_conv <= 400:
+        cs = 0.35
     else:
-        cs = 0.25
+        cs = 0.15
 
-    # 근처 편의점 개수 보너스
-    near = _count_within(conv, 500)
-    cs += min((near - 1) * 0.05, 0.15)
+    # 근처 편의점 개수 보너스 (편의점이 없으면 음수가 되지 않게 max)
+    near = _count_within(conv, 300)
+    cs += min(max(near - 1, 0) * 0.03, 0.10)
 
     # 마트 보너스 (0~0.30)
     if d_mart is None:
         ms = 0.0
-    elif d_mart <= 500:
+    elif d_mart <= 400:
         ms = 0.30
-    elif d_mart <= 1000:
-        ms = 0.20
-    elif d_mart <= 2000:
-        ms = 0.10
+    elif d_mart <= 800:
+        ms = 0.18
+    elif d_mart <= 1500:
+        ms = 0.08
     else:
         ms = 0.0
 
@@ -112,24 +112,26 @@ def _score_food(facilities: dict) -> float:
     restaurants = facilities.get("restaurant", [])
     cafes = facilities.get("cafe", [])
 
-    # 500m 이내 음식점 수
+    # 500m 이내 음식점 수 (카카오 검색은 최대 45건까지만 받는다)
     r_count = _count_within(restaurants, 500)
-    if r_count >= 15:
-        rs = 0.90
-    elif r_count >= 10:
-        rs = 0.80
-    elif r_count >= 5:
-        rs = 0.65
+    if r_count >= 40:
+        rs = 0.85
+    elif r_count >= 25:
+        rs = 0.70
+    elif r_count >= 15:
+        rs = 0.55
+    elif r_count >= 8:
+        rs = 0.40
     elif r_count >= 3:
-        rs = 0.50
+        rs = 0.25
     elif r_count >= 1:
-        rs = 0.35
+        rs = 0.15
     else:
-        rs = 0.10
+        rs = 0.0
 
     # 카페 보너스
     c_count = _count_within(cafes, 500)
-    cb = min(c_count * 0.04, 0.15)
+    cb = min(c_count * 0.02, 0.15)
 
     return min(rs + cb, 1.0)
 
@@ -145,28 +147,28 @@ def _score_medical(facilities: dict) -> float:
     # 병원 (0~0.65)
     if d_h is None:
         hs = 0.0
-    elif d_h <= 300:
+    elif d_h <= 200:
         hs = 0.65
-    elif d_h <= 600:
-        hs = 0.55
+    elif d_h <= 400:
+        hs = 0.50
+    elif d_h <= 700:
+        hs = 0.35
     elif d_h <= 1000:
-        hs = 0.40
-    elif d_h <= 1500:
-        hs = 0.25
+        hs = 0.20
     else:
-        hs = 0.10
+        hs = 0.05
 
     # 약국 (0~0.35)
     if d_p is None:
         ps = 0.0
-    elif d_p <= 200:
+    elif d_p <= 150:
         ps = 0.35
-    elif d_p <= 500:
+    elif d_p <= 300:
         ps = 0.25
-    elif d_p <= 1000:
-        ps = 0.15
+    elif d_p <= 600:
+        ps = 0.12
     else:
-        ps = 0.05
+        ps = 0.03
 
     return min(hs + ps, 1.0)
 
@@ -178,17 +180,17 @@ def _score_leisure(facilities: dict) -> float:
     d_g = _closest(gyms)
 
     if d_g is None:
-        gs = 0.30  # 없어도 기본점수
-    elif d_g <= 300:
+        gs = 0.0
+    elif d_g <= 200:
         gs = 1.00
-    elif d_g <= 600:
-        gs = 0.85
+    elif d_g <= 400:
+        gs = 0.80
+    elif d_g <= 700:
+        gs = 0.55
     elif d_g <= 1000:
-        gs = 0.70
-    elif d_g <= 1500:
-        gs = 0.50
-    else:
         gs = 0.35
+    else:
+        gs = 0.15
 
     return gs
 
@@ -201,18 +203,18 @@ def _score_safety(facilities: dict) -> float:
     conv = facilities.get("convenience", [])
     near = _count_within(conv, 500)
 
-    if near >= 5:
+    if near >= 10:
         return 1.00
-    elif near >= 4:
-        return 0.88
+    elif near >= 7:
+        return 0.85
+    elif near >= 5:
+        return 0.70
     elif near >= 3:
-        return 0.75
-    elif near >= 2:
-        return 0.60
+        return 0.50
     elif near >= 1:
-        return 0.45
+        return 0.30
     else:
-        return 0.20
+        return 0.05
 
 
 # ─── 종합 점수 계산 ─────────────────────────────────────────────────
