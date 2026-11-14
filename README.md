@@ -56,12 +56,15 @@ API 키가 없어도 실행됩니다. 카카오 키가 없으면 데모 데이�
 | `KAKAO_JS_KEY` | 카카오맵 표시 (실행 도메인 등록 필요) | 지도 미표시 |
 | `DATA_GO_KR_API_KEY` | TAGO 버스정류소 조회 | 버스 데모 데이터 |
 | `OPENAI_API_KEY` | AI 한줄평 | 규칙 기반 코멘트 |
-| `SECRET_KEY` | Flask 세션 키 | 기본값 사용 |
+| `SECRET_KEY` | 로그인 세션 서명 키 — **배포 시 반드시 설정** | 개발용 기본값 (공개돼 있어 배포엔 위험) |
+| `DB_PATH` | 회원·기록 SQLite 파일 위치 | `salmanhi.db` (처음 실행 시 자동 생성) |
 
 ## 파일 구조
 
 ```
-app.py          Flask 라우트 (/, /api/config, /api/analyze, /api/compare)
+app.py          Flask 라우트 (분석·비교, 회원, 기록·즐겨찾기)
+db.py           회원·분석 기록 저장 (SQLite)
+test_auth.py    회원·기록 API 점검: python test_auth.py → ok
 kakao.py        카카오 주소 변환·카테고리별 장소 검색
 bus.py          TAGO 버스정류장 조회, 거리 계산
 scoring.py      항목별 점수·가중치·등급 계산
