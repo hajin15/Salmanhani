@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 # 이 줄이 아래로 내려가면 .env에 키를 넣어도 kakao.py는 빈 키를 들고 데모 데이터를 반환한다.
 load_dotenv()
 
+import json
 import re
 import secrets
 
@@ -130,7 +131,34 @@ def logout():
 @app.route("/api/me", methods=["GET"])
 def me():
     uid = current_user_id()
-    return jsonify({"email": db.get_user(uid)["email"] if uid else None})
+    if not uid:
+        return jsonify({"email": None})
+    user = db.get_user(uid)
+    return jsonify({
+        "email": user["email"],
+        "created_at": user["created_at"],
+        "weights": json.loads(user["weights"]) if user["weights"] else None,
+        "stats": db.user_stats(uid),
+    })
+
+
+WEIGHT_MIN, WEIGHT_MAX = 5, 50  # 화면 슬라이더 범위와 같다
+
+
+@app.route("/api/me/weights", methods=["PUT"])
+def save_weights():
+    """Body: { weights: {transit, convenience, food, medical, leisure, safety} | null(기본값으로) }"""
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "로그인이 필요해요."}), 401
+    w = _body().get("weights")
+    if w is not None and not (
+        isinstance(w, dict) and set(w) == set(scoring.DEFAULT_WEIGHTS)
+        and all(type(v) is int and WEIGHT_MIN <= v <= WEIGHT_MAX for v in w.values())
+    ):
+        return jsonify({"error": "중요도 형식이 올바르지 않아요."}), 400
+    db.set_weights(uid, w)
+    return jsonify({"ok": True})
 
 
 def _check_password(uid: int, pw: str) -> bool:
@@ -188,6 +216,28 @@ def delete_history(hid):
     if not uid:
         return jsonify({"error": "로그인이 필요해요."}), 401
     if not db.delete_history(uid, hid):
+        return jsonify({"error": "기록을 찾을 수 없어요."}), 404
+    return jsonify({"ok": True})
+
+
+CHECK_VALUES = {"ok", "bad"}
+MEMO_MAX = 1000
+
+
+@app.route("/api/history/<int:hid>/checklist", methods=["PUT"])
+def save_checklist(hid):
+    """Body: { checklist: {항목키: "ok"|"bad"}, memo }  — 항목 목록 자체는 화면(Saved.jsx CHECK_ITEMS)이 정한다"""
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "로그인이 필요해요."}), 401
+    data = _body()
+    checklist, memo = data.get("checklist"), _str(data, "memo")
+    if (not isinstance(checklist, dict) or len(checklist) > 30
+            or not all(isinstance(k, str) and len(k) <= 20 and v in CHECK_VALUES for k, v in checklist.items())):
+        return jsonify({"error": "체크리스트 형식이 올바르지 않아요."}), 400
+    if len(memo) > MEMO_MAX:
+        return jsonify({"error": f"메모는 {MEMO_MAX}자까지 쓸 수 있어요."}), 400
+    if not db.set_checklist(uid, hid, checklist, memo):
         return jsonify({"error": "기록을 찾을 수 없어요."}), 404
     return jsonify({"ok": True})
 

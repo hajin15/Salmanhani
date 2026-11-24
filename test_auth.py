@@ -135,9 +135,75 @@ def test_favorite_from_result():
     assert r2["history_id"] == r["history_id"] and r2["favorite"] is True
 
 
+def test_checklist():
+    c = client()
+    signup(c, "check@test.com")
+    hid = analyze(c, "서울 마포구 서교동")["history_id"]
+    assert history(c)[0]["checklist"] == {} and history(c)[0]["memo"] == ""
+
+    url = f"/api/history/{hid}/checklist"
+    assert c.put(url, json={"checklist": {"water": "ok", "mold": "bad"}, "memo": "남향"}).status_code == 200
+    it = history(c)[0]
+    assert it["checklist"] == {"water": "ok", "mold": "bad"} and it["memo"] == "남향"
+
+    # 다시 분석해도 체크리스트는 남는다
+    analyze(c, "서울 마포구 서교동")
+    assert history(c)[0]["memo"] == "남향"
+
+    for bad in ({"checklist": {"water": "maybe"}}, {"checklist": [1]}, {"checklist": {}, "memo": "x" * 1001}):
+        assert c.put(url, json=bad).status_code == 400, bad
+    other = client()
+    signup(other, "check2@test.com")
+    assert other.put(url, json={"checklist": {}}).status_code == 404
+    assert client().put(url, json={"checklist": {}}).status_code == 401
+
+    # 체크리스트 칸이 없던 예전 DB 파일도 init()이 칸을 덧붙인다
+    import sqlite3
+    old = os.path.join(tempfile.mkdtemp(), "old.db")
+    with sqlite3.connect(old) as conn:
+        conn.execute("CREATE TABLE history (id INTEGER PRIMARY KEY, user_id INTEGER, address TEXT,"
+                     " total INTEGER, grade TEXT, favorite INTEGER DEFAULT 0, created_at TEXT)")
+    saved = os.environ["DB_PATH"]
+    os.environ["DB_PATH"] = old
+    try:
+        appmod.db.init()
+        appmod.db.init()  # 두 번 켜도 문제없다
+        with appmod.db.connect() as conn:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(history)")}
+        assert {"checklist", "memo"} <= cols
+    finally:
+        os.environ["DB_PATH"] = saved
+
+
+def test_me_weights():
+    c = client()
+    signup(c, "weights@test.com")
+    me = c.get("/api/me").json
+    assert me["weights"] is None and me["created_at"] and me["stats"] == {"saved": 0, "favorite": 0, "checked": 0}
+
+    w = {"transit": 50, "convenience": 5, "food": 10, "medical": 15, "leisure": 20, "safety": 25}
+    assert c.put("/api/me/weights", json={"weights": w}).status_code == 200
+    assert c.get("/api/me").json["weights"] == w
+    assert c.put("/api/me/weights", json={"weights": None}).status_code == 200
+    assert c.get("/api/me").json["weights"] is None
+
+    for bad in ({**w, "transit": 55}, {**w, "transit": 4}, {**w, "transit": "20"}, {**w, "transit": True},
+                {k: v for k, v in w.items() if k != "safety"}, {**w, "extra": 10}, [1]):
+        assert c.put("/api/me/weights", json={"weights": bad}).status_code == 400, bad
+    assert client().put("/api/me/weights", json={"weights": None}).status_code == 401
+
+    hid = analyze(c, "서울 마포구 서교동")["history_id"]
+    analyze(c, "서울 노원구 상계동")
+    c.post(f"/api/history/{hid}/favorite", json={"on": True})
+    c.put(f"/api/history/{hid}/checklist", json={"checklist": {}, "memo": "메모만"})
+    assert c.get("/api/me").json["stats"] == {"saved": 2, "favorite": 1, "checked": 1}
+
+
 if __name__ == "__main__":
+    test_me_weights()
     test_account()
     test_history()
     test_review_fixes()
     test_favorite_from_result()
+    test_checklist()
     print("ok")
