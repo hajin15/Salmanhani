@@ -105,6 +105,16 @@ export const Hint = styled.p`
   color: ${color.ink2};
 `;
 
+export const Small = styled.p`
+  font-size: 13px;
+  color: ${color.ink2};
+`;
+
+export const Err = styled.p`
+  color: ${color.alert};
+  font-size: 14px;
+`;
+
 const spin = keyframes`to { transform: rotate(360deg); }`;
 
 export const Spinner = styled.div`

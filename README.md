@@ -13,6 +13,9 @@
 - **집 비교**: 최대 3곳의 점수와 보증금·월세를 나란히 비교
 - **AI 한줄평**: OpenAI 키가 있으면 GPT 코멘트, 없으면 규칙 기반 코멘트
 - **최근 검색**: 브라우저(localStorage)에 저장
+- **모바일 앱 화면**: 하단 탭(홈·비교·저장·MY)으로 화면 전환, 휴대폰 뒤로가기 지원
+- **저장·체크리스트**: 로그인하면 분석 기록·즐겨찾기가 남고, 집마다 현장 체크리스트(10항목)와 메모
+- **내 기본 중요도**: MY 탭에서 저장해 두면 로그인할 때마다 홈 점수에 적용
 
 ## 기술 스택
 
@@ -69,8 +72,9 @@ kakao.py        카카오 주소 변환·카테고리별 장소 검색
 bus.py          TAGO 버스정류장 조회, 거리 계산
 scoring.py      항목별 점수·가중치·등급 계산
 frontend/
-  src/App.jsx               검색 상태·API 호출
-  src/components/           SearchSection, Results, CategoryChart, KakaoMap, Compare
+  src/App.jsx               검색 상태·API 호출, 하단 탭·화면 전환(#home, #my/account 같은 주소)
+  src/components/           SearchSection, Results, CategoryChart, KakaoMap, Compare,
+                            Saved(기록·체크리스트), Account(MY 탭)
   src/styles.jsx            색 토큰·공용 Emotion 컴포넌트
   src/lib.js                상수·최근 검색·가격 계산
 ```

@@ -58,22 +58,32 @@ export default function SearchSection({ demoMode, loading, recent, weights, onWe
       </Toggle>
 
       {open && (
-        <Panel ref={panelRef}>
-          {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
-            <div key={key}>
-              <label htmlFor={`w-${key}`}>{label} <span>{weights[key]}</span></label>
-              <input
-                type="range"
-                id={`w-${key}`}
-                min="5" max="50" step="5"
-                value={weights[key]}
-                onChange={(e) => onWeightsChange({ ...weights, [key]: Number(e.target.value) })}
-              />
-            </div>
-          ))}
-        </Panel>
+        <div ref={panelRef} style={{ overflow: 'hidden' }}>
+          <WeightSliders id="home" weights={weights} onChange={onWeightsChange} />
+        </div>
       )}
     </Wrap>
+  );
+}
+
+// 항목별 중요도 슬라이더. 홈과 MY > 기본 중요도에서 같이 쓴다 (둘 다 화면에 떠 있으니 id를 나눈다)
+// 범위 5~50은 서버 검사(app.py WEIGHT_MIN/MAX)와 같아야 한다
+export function WeightSliders({ id, weights, onChange }) {
+  return (
+    <Panel>
+      {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+        <div key={key}>
+          <label htmlFor={`${id}-w-${key}`}>{label} <span>{weights[key]}</span></label>
+          <input
+            type="range"
+            id={`${id}-w-${key}`}
+            min="5" max="50" step="5"
+            value={weights[key]}
+            onChange={(e) => onChange({ ...weights, [key]: Number(e.target.value) })}
+          />
+        </div>
+      ))}
+    </Panel>
   );
 }
 
@@ -133,7 +143,6 @@ const Panel = styled.div`
   grid-template-columns: 1fr 1fr;
   gap: 16px 24px;
   margin-top: 16px;
-  overflow: hidden;
   label { display: flex; justify-content: space-between; font-size: 14px; }
   label span { font-variant-numeric: tabular-nums; color: ${color.ink2}; }
   ${mobile} { grid-template-columns: 1fr; }

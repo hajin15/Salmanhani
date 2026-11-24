@@ -1,30 +1,102 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import styled from '@emotion/styled';
-import { Button, LinkButton, TextInput, color } from '../styles.jsx';
-import { api } from '../lib.js';
+import { Button, Err, LinkButton, Small, TextInput, color } from '../styles.jsx';
+import { DEFAULT_WEIGHTS, api } from '../lib.js';
+import { WeightSliders } from './SearchSection.jsx';
 
-// 헤더 오른쪽: 비로그인이면 「로그인」, 로그인이면 「내 계정」.
-// 창은 브라우저 기본 <dialog> — Esc 닫기·포커스 가두기가 공짜다.
-export default function Account({ user, onUserChange, onPick }) {
-  const ref = useRef(null);
-  const [open, setOpen] = useState(false);
+// MY 탭. 비로그인이면 로그인·회원가입.
+// 로그인이면 첫 화면(요약·메뉴) → #my/weights 기본 중요도, #my/account 계정 관리
+export default function Account({ user, sub, active, go, onLogin, onLogout, onWeightsSaved }) {
+  if (!user) return <AuthForm onDone={onLogin} />;
+  if (sub === 'weights') return <MyWeights go={go} onSaved={onWeightsSaved} />;
+  if (sub === 'account') return <AccountManage go={go} onLogout={onLogout} />;
+  return <MyHome user={user} active={active} go={go} onLogout={onLogout} />;
+}
 
+// /api/me를 다시 읽는다 (요약 숫자는 저장 탭에서 바뀌므로 MY에 들어올 때마다)
+function useMe(active) {
+  const [me, setMe] = useState(null);
   useEffect(() => {
-    const d = ref.current;
-    if (open && !d.open) d.showModal();
-    if (!open && d.open) d.close();
-  }, [open]);
+    if (active) api('GET', '/api/me').then(({ ok, data }) => ok && setMe(data));
+  }, [active]);
+  return me;
+}
+
+function MyHome({ user, active, go, onLogout }) {
+  const me = useMe(active);
+
+  async function logout() {
+    await api('POST', '/api/logout');
+    onLogout();
+  }
 
   return (
-    <>
-      <LinkButton onClick={() => setOpen(true)}>{user ? '내 계정' : '로그인'}</LinkButton>
-      <Dialog ref={ref} onClose={() => setOpen(false)} aria-label={user ? '내 계정' : '로그인'}>
-        <Close onClick={() => setOpen(false)} aria-label="닫기">×</Close>
-        {open && (user
-          ? <MyAccount user={user} onUserChange={onUserChange} onPick={(a) => { setOpen(false); onPick(a); }} />
-          : <AuthForm onDone={(email) => { onUserChange(email); setOpen(false); }} />)}
-      </Dialog>
-    </>
+    <div>
+      <h1>{user}</h1>
+      {me && <Small>{me.created_at.slice(0, 10).replaceAll('-', '.')} 가입</Small>}
+
+      <Stats>
+        {[['저장한 집', 'saved'], ['즐겨찾기', 'favorite'], ['체크 완료', 'checked']].map(([label, key]) => (
+          <button key={key} onClick={() => go('saved')}>
+            <strong>{me ? me.stats[key] : '–'}</strong>
+            {label}
+          </button>
+        ))}
+      </Stats>
+
+      <Menu>
+        <li><button onClick={() => go('my/weights')}>내 기본 중요도 설정<span aria-hidden="true">›</span></button></li>
+        <li><button disabled>출퇴근지 등록 <Small as="span">준비 중</Small></button></li>
+      </Menu>
+      <Menu>
+        <li><button onClick={() => go('my/account')}>계정 관리<span aria-hidden="true">›</span></button></li>
+        <li><button onClick={logout}>로그아웃</button></li>
+      </Menu>
+    </div>
+  );
+}
+
+function MyWeights({ go, onSaved }) {
+  const [draft, setDraft] = useState(null);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    api('GET', '/api/me').then(({ data }) => setDraft(data.weights ?? DEFAULT_WEIGHTS));
+  }, []);
+
+  async function save(w) {
+    const { ok, data } = await api('PUT', '/api/me/weights', { weights: w });
+    if (!ok) return setMsg({ ok: false, text: data.error });
+    setDraft(w ?? DEFAULT_WEIGHTS);
+    onSaved(w);
+    setMsg({ ok: true, text: w ? '저장했어요. 홈 점수에도 바로 적용돼요.' : '기본값으로 되돌렸어요.' });
+  }
+
+  return (
+    <div>
+      <Back onClick={() => go('my')}>‹ MY</Back>
+      <h1>내 기본 중요도</h1>
+      <Small>나한테 중요한 항목을 높여 두면, 로그인할 때마다 홈 점수가 이 기준으로 계산돼요.</Small>
+      {draft && <WeightSliders id="my" weights={draft} onChange={(w) => { setDraft(w); setMsg(null); }} />}
+      {msg && (msg.ok ? <Small role="status" style={{ marginTop: 16 }}>{msg.text}</Small> : <Err role="alert">{msg.text}</Err>)}
+      <Actions>
+        <Button onClick={() => save(draft)} disabled={!draft}>저장</Button>
+        <LinkButton onClick={() => save(null)}>기본값으로</LinkButton>
+      </Actions>
+    </div>
+  );
+}
+
+function AccountManage({ go, onLogout }) {
+  return (
+    <div>
+      <Back onClick={() => go('my')}>‹ MY</Back>
+      <h1>계정 관리</h1>
+      <PasswordForm />
+      <Footer>
+        <DeleteAccount onDeleted={() => { onLogout(); go('my'); }} />
+      </Footer>
+    </div>
   );
 }
 
@@ -40,13 +112,15 @@ function AuthForm({ onDone }) {
     setError('');
     const { ok, data } = await api('POST', isLogin ? '/api/login' : '/api/signup', { email, password });
     if (!ok) return setError(data.error);
-    onDone(data.email);
+    setPassword('');
+    onDone();
   }
 
   return (
     <Form onSubmit={submit}>
-      <h2>{isLogin ? '로그인' : '회원가입'}</h2>
-      <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+      <h1>{isLogin ? '로그인' : '회원가입'}</h1>
+      {/* 로그인은 형식 검사 없이 서버에 맡긴다 (로컬 테스트 계정 "00"도 들어가게). 가입은 이메일 형식 강제 */}
+      <TextInput type={isLogin ? 'text' : 'email'} inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)}
         placeholder="이메일" aria-label="이메일" autoComplete="email" required />
       <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)}
         placeholder={isLogin ? '비밀번호' : '비밀번호 (8자 이상)'} aria-label="비밀번호"
@@ -60,69 +134,6 @@ function AuthForm({ onDone }) {
         </LinkButton>
       </Small>
     </Form>
-  );
-}
-
-function MyAccount({ user, onUserChange, onPick }) {
-  const [tab, setTab] = useState('all');
-  const [items, setItems] = useState(null);
-  const [error, setError] = useState('');
-
-  async function load(t = tab) {
-    const { ok, data } = await api('GET', `/api/history${t === 'fav' ? '?favorite=1' : ''}`);
-    if (ok) setItems(data.items); else setError(data.error);
-  }
-  useEffect(() => { load(tab); }, [tab]);  // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function toggle(it) {
-    const { ok, data } = await api('POST', `/api/history/${it.id}/favorite`, { on: !it.favorite });
-    if (ok) load(); else setError(data.error);
-  }
-
-  async function remove(it) {
-    const { ok, data } = await api('DELETE', `/api/history/${it.id}`);
-    if (ok) load(); else setError(data.error);
-  }
-
-  async function logout() {
-    await api('POST', '/api/logout');
-    onUserChange(null);
-  }
-
-  return (
-    <div>
-      <h2>내 계정</h2>
-      <Small>{user}</Small>
-
-      <Tabs role="tablist">
-        <Tab role="tab" aria-selected={tab === 'all'} onClick={() => setTab('all')}>기록</Tab>
-        <Tab role="tab" aria-selected={tab === 'fav'} onClick={() => setTab('fav')}>즐겨찾기</Tab>
-      </Tabs>
-      {error && <Err role="alert">{error}</Err>}
-      {items && items.length === 0 && (
-        <Small>{tab === 'fav' ? '기록에서 ☆를 눌러 즐겨찾기에 추가해 보세요.' : '로그인한 상태로 분석한 주소가 여기에 남아요.'}</Small>
-      )}
-      <List>
-        {items?.map((it) => (
-          <li key={it.id}>
-            <Star onClick={() => toggle(it)} aria-pressed={it.favorite}
-              aria-label={it.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}>{it.favorite ? '★' : '☆'}</Star>
-            <div>
-              <LinkButton onClick={() => onPick(it.address)}>{it.address}</LinkButton>
-              <Small>{it.total}점 · {it.grade} · {it.created_at.slice(5, 10).replace('-', '/')}</Small>
-            </div>
-            <Del onClick={() => remove(it)} aria-label={`${it.address} 기록 삭제`}>삭제</Del>
-          </li>
-        ))}
-      </List>
-
-      <PasswordForm />
-
-      <Footer>
-        <LinkButton onClick={logout}>로그아웃</LinkButton>
-        <DeleteAccount onDeleted={() => onUserChange(null)} />
-      </Footer>
-    </div>
   );
 }
 
@@ -140,7 +151,7 @@ function PasswordForm() {
 
   return (
     <Form onSubmit={submit}>
-      <h3>비밀번호 변경</h3>
+      <h2>비밀번호 변경</h2>
       <TextInput type="password" value={current} onChange={(e) => setCurrent(e.target.value)}
         placeholder="현재 비밀번호" aria-label="현재 비밀번호" autoComplete="current-password" required />
       <TextInput type="password" value={next} onChange={(e) => setNext(e.target.value)}
@@ -175,97 +186,77 @@ function DeleteAccount({ onDeleted }) {
   );
 }
 
-const Dialog = styled.dialog`
-  margin: auto;
-  width: min(440px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
-  padding: 28px 24px;
-  border: 1px solid ${color.ink};
-  border-radius: 4px;
-  background: ${color.paper};
-  color: ${color.ink};
-  &::backdrop { background: rgba(0, 0, 0, 0.35); }
-  h2 { font-size: 18px; font-weight: 700; }
-  h3 { font-size: 15px; font-weight: 700; margin-top: 28px; }
-`;
-
-const Close = styled.button`
-  position: absolute;
-  top: 10px;
-  right: 14px;
-  font-size: 24px;
-  line-height: 1;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: ${color.ink2};
-`;
-
 const Form = styled.form`
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-top: 8px;
   input { width: 100%; }
+  h2 { font-size: 15px; font-weight: 700; margin-top: 28px; }
 `;
 
-const Err = styled.p`
-  color: ${color.alert};
-  font-size: 14px;
-`;
-
-const Small = styled.p`
-  font-size: 13px;
-  color: ${color.ink2};
-`;
-
-const Tabs = styled.div`
-  display: flex;
-  gap: 16px;
-  margin: 20px 0 8px;
-  border-bottom: 1px solid ${color.rule};
-`;
-
-const Tab = styled.button`
-  font: inherit;
+const Back = styled(LinkButton)`
+  text-decoration: none;
   font-size: 15px;
-  background: none;
-  border: none;
-  padding: 6px 0;
-  cursor: pointer;
   color: ${color.ink2};
-  border-bottom: 2px solid transparent;
-  &[aria-selected='true'] { color: ${color.ink}; font-weight: 700; border-bottom-color: ${color.ink}; }
+  min-height: 44px;
+  margin-bottom: 4px;
 `;
 
-const List = styled.ul`
-  list-style: none;
-  li {
+const Stats = styled.div`
+  display: flex;
+  margin: 24px 0 8px;
+  border: 1px solid ${color.rule};
+  border-radius: 6px;
+  button {
+    flex: 1;
     display: flex;
-    gap: 10px;
+    flex-direction: column;
     align-items: center;
-    padding: 10px 0;
-    border-bottom: 1px solid ${color.rule};
-    font-size: 14px;
+    gap: 2px;
+    padding: 14px 0;
+    font: inherit;
+    font-size: 13px;
+    color: ${color.ink2};
+    background: none;
+    border: none;
+    cursor: pointer;
   }
-  li > div { flex: 1; min-width: 0; }
-  li > div > button { text-align: left; }
+  button + button { border-left: 1px solid ${color.rule}; }
+  strong { font-size: 22px; color: ${color.ink}; font-variant-numeric: tabular-nums; }
 `;
 
-const Star = styled.button`
-  font-size: 20px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: ${color.plate};
+// 앱 설정 화면처럼 한 줄씩 누르는 메뉴
+const Menu = styled.ul`
+  list-style: none;
+  margin-top: 24px;
+  border-top: 1px solid ${color.rule};
+  button {
+    width: 100%;
+    min-height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font: inherit;
+    font-size: 16px;
+    color: ${color.ink};
+    background: none;
+    border: none;
+    border-bottom: 1px solid ${color.rule};
+    cursor: pointer;
+    text-align: left;
+  }
+  button:disabled { color: ${color.ink2}; cursor: default; }
+  span[aria-hidden] { font-size: 20px; color: ${color.ink2}; }
 `;
 
-const Del = styled.button`
-  font: inherit;
-  font-size: 13px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: ${color.ink2};
+const Actions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 28px;
+  font-size: 14px;
 `;
 
 const Footer = styled.div`
@@ -273,7 +264,7 @@ const Footer = styled.div`
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-top: 28px;
+  margin-top: 40px;
   font-size: 14px;
-  form { flex: 1; }
+  form { flex: 1; margin-top: 0; }
 `;
