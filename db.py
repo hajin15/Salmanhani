@@ -4,6 +4,7 @@ DB는 파일 하나(DB_PATH, 기본 salmanhi.db)이고 서버가 켜질 때 테�
 ponytail: 파일이 지워지는 호스팅에선 가입 정보가 사라진다 → 그때 PostgreSQL로 옮긴다.
 """
 
+import json
 import os
 import sqlite3
 
@@ -43,6 +44,15 @@ def connect() -> sqlite3.Connection:
 def init():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # 나중에 생긴 칸 → 예전 DB 파일에도 덧붙인다 (기존 행은 기본값으로)
+        _add_column(conn, "history", "checklist", "TEXT NOT NULL DEFAULT '{}'")
+        _add_column(conn, "history", "memo", "TEXT NOT NULL DEFAULT ''")
+        _add_column(conn, "users", "weights", "TEXT")  # NULL이면 기본 중요도
+
+
+def _add_column(conn, table: str, col: str, ddl: str):
+    if col not in {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
 
 
 # ─── 회원 ───────────────────────────────────────────────────────────
@@ -73,6 +83,23 @@ def set_password(user_id: int, password_hash: str):
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
 
 
+def set_weights(user_id: int, weights: dict | None):
+    """내 기본 중요도. None이면 기본값으로 되돌린다"""
+    with connect() as conn:
+        conn.execute("UPDATE users SET weights = ? WHERE id = ?",
+                     (json.dumps(weights) if weights else None, user_id))
+
+
+def user_stats(user_id: int) -> dict:
+    """MY 탭 요약: 저장한 집·즐겨찾기·체크리스트를 하나라도 쓴 집 수"""
+    with connect() as conn:
+        r = conn.execute(
+            """SELECT COUNT(*) AS saved, COALESCE(SUM(favorite), 0) AS favorite,
+                      COALESCE(SUM(checklist != '{}' OR memo != ''), 0) AS checked
+               FROM history WHERE user_id = ?""", (user_id,)).fetchone()
+    return dict(r)
+
+
 def delete_user(user_id: int):
     with connect() as conn:
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
@@ -96,12 +123,21 @@ def save_history(user_id: int, address: str, total: int, grade: str) -> tuple[in
 
 
 def list_history(user_id: int, favorite_only: bool = False) -> list[dict]:
-    sql = "SELECT id, address, total, grade, favorite, created_at FROM history WHERE user_id = ?"
+    sql = "SELECT id, address, total, grade, favorite, checklist, memo, created_at FROM history WHERE user_id = ?"
     if favorite_only:
         sql += " AND favorite = 1"
     with connect() as conn:
         rows = conn.execute(sql + " ORDER BY created_at DESC, id DESC", (user_id,)).fetchall()
-    return [{**dict(r), "favorite": bool(r["favorite"])} for r in rows]
+    return [{**dict(r), "favorite": bool(r["favorite"]), "checklist": json.loads(r["checklist"])} for r in rows]
+
+
+def set_checklist(user_id: int, hid: int, checklist: dict, memo: str) -> bool:
+    """집 보러 가서 남긴 체크리스트·메모. 남의 기록이면 False"""
+    with connect() as conn:
+        return conn.execute(
+            "UPDATE history SET checklist = ?, memo = ? WHERE id = ? AND user_id = ?",
+            (json.dumps(checklist, ensure_ascii=False), memo, hid, user_id),
+        ).rowcount > 0
 
 
 def set_favorite(user_id: int, hid: int, on: bool) -> bool:
