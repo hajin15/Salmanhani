@@ -106,7 +106,7 @@ def summarize(deals: list) -> dict:
     return {
         "count": len(deals),
         "name": deals[0]["name"] if deals else None,
-        "kind": deals[0]["kind"] if deals else None,
+        "kind": "·".join(dict.fromkeys(d["kind"] for d in deals)) or None,  # 주상복합은 "아파트·오피스텔"
         "monthly": monthly and {
             "count": len(monthly),
             "deposit_avg": avg([d["deposit"] for d in monthly]),
