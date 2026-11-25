@@ -28,6 +28,12 @@ CATEGORY = {
 # (헬스장은 예전에 PT8로 부르고 있었는데, 그런 코드는 없어서 400 ValidationError였다.)
 KEYWORD = {
     "gym": "헬스장",
+    "police": "지구대",  # 지구대·파출소·치안센터가 다 걸린다 ("파출소"로 찾아도 결과 동일)
+}
+
+# 키워드는 이름만 맞아도 걸린다 ("노원역지구대 개방화장실"). 카테고리에 이 말이 있어야 남긴다.
+KEYWORD_CATEGORY = {
+    "police": "경찰서",
 }
 
 # 버스정류장은 여기에 없다 — 카카오 장소 DB가 정류장을 담고 있지 않다.
@@ -114,6 +120,7 @@ def _paged_search(url: str, params: dict) -> list:
                 "address": d.get("road_address_name", ""),
                 "lat": float(d["y"]),
                 "lng": float(d["x"]),
+                "category": d.get("category_name", ""),
             })
         if data.get("meta", {}).get("is_end") or page >= 3:
             break
@@ -146,10 +153,12 @@ def search_nearby_keyword(lat: float, lng: float, category_key: str, radius: int
     if not query:
         return []
 
-    return _paged_search("https://dapi.kakao.com/v2/local/search/keyword.json", {
+    places = _paged_search("https://dapi.kakao.com/v2/local/search/keyword.json", {
         "query": query,
         "x": lng, "y": lat, "radius": radius, "sort": "distance",
     })
+    must = KEYWORD_CATEGORY.get(category_key)
+    return [p for p in places if must in p["category"]] if must else places
 
 
 def get_all_facilities(lat: float, lng: float) -> dict:
@@ -163,6 +172,7 @@ def get_all_facilities(lat: float, lng: float) -> dict:
         "hospital":    search_nearby(lat, lng, "hospital", 1500),
         "pharmacy":    search_nearby(lat, lng, "pharmacy", 1000),
         "gym":         search_nearby_keyword(lat, lng, "gym", 1500),
+        "police":      search_nearby_keyword(lat, lng, "police", 1500),
     }
 
 
@@ -225,6 +235,7 @@ def _mock_facilities(lat: float, lng: float, category_key: str, radius: int) -> 
         "hospital":    {"count_range": (0, 4),  "dist_range": (200, 1500), "names": ["내과의원", "외과의원", "피부과", "정형외과", "이비인후과"]},
         "pharmacy":    {"count_range": (1, 4),  "dist_range": (100, 1000), "names": ["○○약국", "△△약국", "건강약국"]},
         "gym":         {"count_range": (0, 3),  "dist_range": (300, 1500), "names": ["헬스장", "피트니스센터", "스포츠센터"]},
+        "police":      {"count_range": (0, 2),  "dist_range": (200, 1500), "names": ["○○지구대", "△△파출소"]},
     }
 
     cfg = configs.get(category_key, {"count_range": (0, 2), "dist_range": (200, 1500), "names": ["시설"]})

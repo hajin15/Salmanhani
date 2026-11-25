@@ -4,7 +4,7 @@ import { color } from '../styles.jsx';
 
 const PIN_LABELS = {
   subway: '지하철', bus: '버스', convenience: '편의점', mart: '마트', restaurant: '음식점',
-  cafe: '카페', hospital: '병원', pharmacy: '약국', gym: '헬스장',
+  cafe: '카페', hospital: '병원', pharmacy: '약국', gym: '헬스장', police: '지구대',
 };
 
 // SDK는 처음 지도를 그릴 때 한 번만 불러온다

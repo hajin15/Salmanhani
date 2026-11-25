@@ -28,6 +28,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import kakao
 import bus
+import cctv
 import scoring
 import db
 
@@ -347,6 +348,7 @@ def _get_facilities(lat: float, lng: float) -> dict:
     버스정류장만 제공자가 다르다 — kakao.py 상단 주석 참고."""
     facilities = kakao.get_all_facilities(lat, lng)
     facilities["bus"] = bus.search_bus_stops(lat, lng)
+    facilities["cctv"] = cctv.count_nearby(lat, lng)  # 장소 목록이 아니라 반경 300m 카메라 대수 (파일 없으면 None)
     return facilities
 
 
@@ -365,6 +367,8 @@ def _facilities_summary(facilities: dict) -> dict:
         "restaurant":  len([r for r in facilities.get("restaurant", []) if r["distance"] <= 500]),
         "hospital":    closest_name(facilities.get("hospital", [])),
         "gym":         closest_name(facilities.get("gym", [])),
+        "police":      closest_name(facilities.get("police", [])),
+        "cctv":        facilities.get("cctv"),
     }
 
 
@@ -372,6 +376,8 @@ def _map_pins(facilities: dict) -> list:
     """지도 핀: 카테고리마다 가장 가까운 1곳 (점수도 최근접 거리 기준이라 화면과 맞는다)"""
     pins = []
     for key, places in facilities.items():
+        if not isinstance(places, list):  # cctv는 대수(숫자)
+            continue
         places = [p for p in places if "lat" in p]
         if places:
             p = min(places, key=lambda x: x["distance"])
@@ -434,4 +440,6 @@ if __name__ == "__main__":
     print(f"\n🏠 살만하니 서버 시작 → http://localhost:{port}")
     if not KAKAO_API_KEY:
         print("⚠️  카카오 API 키 없음 → 데모 모드로 실행됩니다.")
+    if cctv._grid() is None:  # 첫 분석이 몇 초 멈추지 않게 미리 읽어 둔다
+        print("⚠️  data/cctv.csv 없음 → 야간 안전은 지구대·편의점만으로 계산합니다.")
     app.run(debug=True, host="0.0.0.0", port=port)

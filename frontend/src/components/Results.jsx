@@ -35,6 +35,8 @@ export default function Results({ data, kakaoKey }) {
     ['음식점 (500m)',     `${s.restaurant ?? 0}곳`],
     ['병원',              near(s.hospital)],
     ['헬스장',            near(s.gym)],
+    ['지구대·파출소',     near(s.police)],
+    ...(s.cctv != null ? [['CCTV (300m)', `${s.cctv}대`]] : []),
   ];
 
   return (
