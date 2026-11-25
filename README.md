@@ -65,6 +65,8 @@ API 키가 없어도 실행됩니다. 카카오 키가 없으면 데모 데이�
 
 **CCTV 데이터:** 공공데이터포털에서 '전국CCTV표준데이터' → 파일데이터(CSV)를 받아 `data/cctv.csv`로 둡니다(약 80MB, git 제외). OpenAPI는 좌표·반경 검색이 안 돼서 파일을 서버 시작 때 메모리에 올려 씁니다. 지자체마다 등록 범위가 달라 지역 간 대수 차이가 큽니다.
 
+**전월세 실거래:** `DATA_GO_KR_API_KEY`를 그대로 쓰지만, data.go.kr에서 국토교통부 아파트·오피스텔·연립다세대 전월세 실거래가 서비스를 각각 활용신청해야 합니다. 신청 전에는 결과 화면에서 이 섹션만 숨겨집니다.
+
 ## 파일 구조
 
 ```
@@ -74,6 +76,7 @@ test_auth.py    회원·기록 API 점검: python test_auth.py → ok
 kakao.py        카카오 주소 변환·카테고리별 장소 검색
 bus.py          TAGO 버스정류장 조회, 거리 계산
 cctv.py         CCTV CSV 로드·반경 내 대수: python cctv.py → ok
+rent.py         국토부 전월세 실거래 조회·요약: python rent.py → ok
 scoring.py      항목별 점수·가중치·등급 계산
 frontend/
   src/App.jsx               검색 상태·API 호출, 하단 탭·화면 전환(#home, #my/account 같은 주소)

@@ -64,6 +64,11 @@ def get_coords(address: str) -> dict | None:
             "lng": float(d["x"]),
             "road_address": road.get("address_name", address),
             "jibun_address": jibun.get("address_name", address),
+            # 전월세 실거래 매칭용 (rent.py): 법정동코드 앞 5자리 = 시군구, 법정동 이름, 지번 본번·부번
+            "b_code": jibun.get("b_code"),
+            "dong": jibun.get("region_3depth_name"),
+            "main_no": jibun.get("main_address_no"),
+            "sub_no": jibun.get("sub_address_no"),
         }
     except Exception:
         return None

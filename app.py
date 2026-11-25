@@ -29,6 +29,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import kakao
 import bus
 import cctv
+import rent
 import scoring
 import db
 
@@ -294,6 +295,7 @@ def analyze():
         "ai_comment": ai_comment,
         "facilities_summary": _facilities_summary(facilities),
         "pins": _map_pins(facilities),
+        "rent": rent.lookup(coords),  # 이 건물 최근 1년 전월세 실거래 (키·활용신청 없으면 None)
         "history_id": history_id,  # 비로그인이면 None → 화면에 ☆ 버튼 없음
         "favorite": favorite,
     })

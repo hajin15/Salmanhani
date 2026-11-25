@@ -84,7 +84,51 @@ export default function Results({ data, kakaoKey }) {
           ))}
         </Facilities>
       </Block>
+
+      {data.rent && <RentHistory rent={data.rent} />}
     </div>
+  );
+}
+
+// 만원 단위 → "1억 2,000" / "1,000"
+const won = (m) => (m >= 10000 ? `${Math.floor(m / 10000)}억${m % 10000 ? ` ${(m % 10000).toLocaleString()}` : ''}` : m.toLocaleString());
+
+function RentHistory({ rent }) {
+  const { monthly, jeonse } = rent;
+  return (
+    <Block data-reveal>
+      <h2>최근 1년 전월세 실거래</h2>
+      {rent.count === 0 ? (
+        <Hint>이 건물은 최근 1년 신고된 전월세 거래가 없어요. (단독·다가구는 건물 단위로 공개되지 않아요)</Hint>
+      ) : (
+        <>
+          <Hint>{rent.name} · {rent.kind} · 국토교통부 신고 기준</Hint>
+          <Facilities>
+            {monthly && (
+              <div>
+                <dt>월세 {monthly.count}건</dt>
+                <dd>
+                  보증금 평균 {won(monthly.deposit_avg)} / 월{' '}
+                  {monthly.rent_min === monthly.rent_max ? monthly.rent_min : `${monthly.rent_min}~${monthly.rent_max}`}만
+                </dd>
+              </div>
+            )}
+            {jeonse && (
+              <div>
+                <dt>전세 {jeonse.count}건</dt>
+                <dd>평균 {won(jeonse.deposit_avg)}</dd>
+              </div>
+            )}
+            {rent.recent.map((d, i) => (
+              <div key={i}>
+                <dt>{d.date} · {d.floor}층 · {d.area}㎡</dt>
+                <dd>{d.rent ? `${won(d.deposit)} / ${d.rent}만` : `전세 ${won(d.deposit)}`}</dd>
+              </div>
+            ))}
+          </Facilities>
+        </>
+      )}
+    </Block>
   );
 }
 
