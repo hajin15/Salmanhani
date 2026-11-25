@@ -56,6 +56,13 @@ export default function App() {
     ? window.scrollTo({ top: 0, behavior: 'smooth' })
     : (window.location.hash = to));
 
+  // 검색창 밖에서 검색을 시작할 때: 검색창엔 label(건물 이름 등), 분석은 address로
+  const [query, setQuery] = useState(null);
+  function pick(address, label = address) {
+    setQuery({ text: label });
+    analyze(address);
+  }
+
   async function analyze(address) {
     setLoading(true);
     setError('');
@@ -94,6 +101,7 @@ export default function App() {
             onWeightsChange={setWeights}
             onSearch={analyze}
             onError={setError}
+            query={query}
           />
 
           {error && <ErrorBox role="alert">{error}</ErrorBox>}
@@ -105,7 +113,7 @@ export default function App() {
             </Loading>
           )}
 
-          {result && <Results data={result} kakaoKey={config.kakao_js_key} />}
+          {result && <Results data={result} kakaoKey={config.kakao_js_key} onPick={pick} />}
         </Screen>
 
         <Screen hidden={tab !== 'compare'}>
@@ -114,7 +122,7 @@ export default function App() {
 
         <Screen hidden={tab !== 'saved'}>
           <Saved user={user} active={tab === 'saved'} onLogin={() => go('my')}
-            onPick={(a) => { go('home'); analyze(a); }} />
+            onPick={(a) => { go('home'); pick(a); }} />
         </Screen>
 
         <Screen hidden={tab !== 'my'}>

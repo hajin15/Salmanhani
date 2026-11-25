@@ -1,12 +1,14 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styled from '@emotion/styled';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { Button, LinkButton, TextInput, color, mobile } from '../styles.jsx';
 import { CATEGORY_LABELS, dur } from '../lib.js';
 
-export default function SearchSection({ demoMode, loading, recent, weights, onWeightsChange, onSearch, onError }) {
+export default function SearchSection({ demoMode, loading, recent, weights, onWeightsChange, onSearch, onError, query }) {
   const [address, setAddress] = useState('');
+  // 추천 건물·저장 기록을 눌러 검색하면 검색창 글자도 바꾼다 (query는 매번 새 객체라 같은 이름도 다시 반영)
+  useEffect(() => { if (query) setAddress(query.text); }, [query]);
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
 

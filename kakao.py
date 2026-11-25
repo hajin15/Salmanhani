@@ -8,6 +8,17 @@ import math
 import hashlib
 import random
 import requests
+from concurrent.futures import ThreadPoolExecutor
+
+# 외부 API 호출 공용 풀. 추천(후보 8곳 동시)도 여기로 몰려서 동시 요청이 32개를 넘지 않는다.
+# 여기서 도는 작업은 POOL에 다시 맡기고 기다리면 안 된다 (자리가 다 차면 서로 기다리며 멈춘다).
+# ponytail: 카카오가 429를 주기 시작하면 max_workers를 줄인다.
+POOL = ThreadPoolExecutor(max_workers=32)
+
+# 연결 재사용: requests.get은 매번 새로 TLS 연결을 맺어서 카카오 호출 하나가 1.8초씩 걸렸다
+SESSION = requests.Session()
+SESSION.mount("https://", requests.adapters.HTTPAdapter(pool_maxsize=32))
+SESSION.mount("http://", requests.adapters.HTTPAdapter(pool_maxsize=32))
 
 KAKAO_API_KEY = os.getenv("KAKAO_API_KEY", "")
 
@@ -101,7 +112,7 @@ def fetch_json(url: str, params: dict, headers: dict | None = None) -> dict:
     # ponytail: 1회 재시도만. 공공 API가 자주 흔들리면 백오프나 캐시를 붙인다.
     for _ in range(2):
         try:
-            res = requests.get(url, headers=headers, params=params, timeout=5)
+            res = SESSION.get(url, headers=headers, params=params, timeout=5)
             res.raise_for_status()
             return res.json()
         except (requests.RequestException, ValueError) as e:
@@ -166,19 +177,61 @@ def search_nearby_keyword(lat: float, lng: float, category_key: str, radius: int
     return [p for p in places if must in p["category"]] if must else places
 
 
+# 카카오 '부동산 > 주거시설 > X'의 X → 추천 그룹. 카카오엔 '원룸' 분류가 없어(키워드도 0건)
+# 오피스텔·도시형생활주택(대부분 원룸형)을 묶는다. 다가구 원룸은 '빌라,주택'으로 잡힌다.
+HOME_GROUP = {"아파트": "아파트", "오피스텔": "원룸·오피스텔", "도시형생활주택": "원룸·오피스텔", "빌라,주택": "빌라·주택"}
+HOME_QUERIES = ("아파트", "오피스텔", "도시형생활주택", "빌라")
+# 전월세 실거래 유형(rent.py) → 추천 그룹
+RENT_GROUP = {"아파트": "아파트", "오피스텔": "원룸·오피스텔", "연립다세대": "빌라·주택"}
+
+
+def _home_group(category: str) -> str | None:
+    parts = category.split(" > ")
+    # 정확히 3단계만: 4단계는 '아파트부속시설' 같은 딸린 시설
+    if len(parts) == 3 and parts[:2] == ["부동산", "주거시설"]:
+        return HOME_GROUP.get(parts[2])
+    return None
+
+
+def search_homes(lat: float, lng: float, rent_kind: str | None = None,
+                 radius: int = 1000, n: int = 8) -> tuple[str | None, list]:
+    """주변 주거건물 후보 (추천용) → (검색한 집의 그룹, 같은 그룹 후보 n곳).
+    그룹은 검색 지점 50m 안 주거시설 분류 → 전월세 유형 순으로 정하고, 둘 다 모르면 전부 섞는다."""
+    if not KAKAO_API_KEY:
+        return None, []
+    jobs = [POOL.submit(_paged_search, "https://dapi.kakao.com/v2/local/search/keyword.json", {
+        "query": q, "x": lng, "y": lat, "radius": radius, "sort": "distance",
+    }) for q in HOME_QUERIES]
+    seen = {}
+    for f in jobs:
+        for p in f.result():
+            g = _home_group(p["category"])
+            if g and "(예정)" not in p["name"]:
+                seen.setdefault(p["name"], {**p, "group": g})
+    homes = sorted(seen.values(), key=lambda p: p["distance"])
+
+    group = next((p["group"] for p in homes if p["distance"] <= 50), None) \
+        or RENT_GROUP.get((rent_kind or "").split("·")[0])
+    # 150m 안은 시설 목록이 거의 같아 점수도 같다 → 추천 의미가 없다
+    homes = [p for p in homes if p["distance"] >= 150 and (group is None or p["group"] == group)]
+    # ponytail: 거리순으로 고르게 n곳만 채점한다 (한 곳당 카카오 호출 수십 번). 더 넓히려면 결과 캐시부터.
+    return group, homes[::max(1, len(homes) // n)][:n]
+
+
 def get_all_facilities(lat: float, lng: float) -> dict:
-    """6개 카테고리 전체 시설 조회"""
-    return {
-        "subway":      search_nearby(lat, lng, "subway", 2000),
-        "convenience": search_nearby(lat, lng, "convenience", 1000),
-        "mart":        search_nearby(lat, lng, "mart", 2000),
-        "restaurant":  search_nearby(lat, lng, "restaurant", 1000),
-        "cafe":        search_nearby(lat, lng, "cafe", 1000),
-        "hospital":    search_nearby(lat, lng, "hospital", 1500),
-        "pharmacy":    search_nearby(lat, lng, "pharmacy", 1000),
-        "gym":         search_nearby_keyword(lat, lng, "gym", 1500),
-        "police":      search_nearby_keyword(lat, lng, "police", 1500),
+    """전체 시설 조회 — 카테고리끼리 동시에 부른다 (차례로 부르면 3초, 동시에 하면 페이지 수만큼만)"""
+    jobs = {
+        "subway":      POOL.submit(search_nearby, lat, lng, "subway", 2000),
+        "convenience": POOL.submit(search_nearby, lat, lng, "convenience", 1000),
+        "mart":        POOL.submit(search_nearby, lat, lng, "mart", 2000),
+        "restaurant":  POOL.submit(search_nearby, lat, lng, "restaurant", 1000),
+        "cafe":        POOL.submit(search_nearby, lat, lng, "cafe", 1000),
+        "hospital":    POOL.submit(search_nearby, lat, lng, "hospital", 1500),
+        "pharmacy":    POOL.submit(search_nearby, lat, lng, "pharmacy", 1000),
+        "gym":         POOL.submit(search_nearby_keyword, lat, lng, "gym", 1500),
+        "police":      POOL.submit(search_nearby_keyword, lat, lng, "police", 1500),
     }
+    return {k: f.result() for k, f in jobs.items()}  # FetchError는 그대로 위로 올라간다
 
 
 # ─── Mock 데이터 (API 키 없을 때) ───────────────────────────────────

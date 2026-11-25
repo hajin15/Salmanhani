@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styled from '@emotion/styled';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
@@ -9,9 +9,23 @@ import KakaoMap from './KakaoMap.jsx';
 
 const near = (p) => (p ? `${p.name}, ${p.distance}m` : '반경 안에 없음');
 
-export default function Results({ data, kakaoKey }) {
+export default function Results({ data, kakaoKey, onPick }) {
   const rootRef = useRef(null);
   const scoreRef = useRef(null);
+  const [homes, setHomes] = useState(null);  // null = 계산 중
+  const [group, setGroup] = useState(null);  // 아파트 / 원룸·오피스텔 / 빌라·주택 (모르면 null)
+
+  // 추천은 후보마다 시설을 새로 조회해서 몇 초 걸린다 → 결과를 먼저 보여주고 따로 부른다
+  useEffect(() => {
+    let live = true;
+    setHomes(null);
+    api('POST', '/api/recommend', {
+      lat: data.lat, lng: data.lng, total: data.total, weights: data.weights, kind: data.rent?.kind,
+    })
+      .then(({ ok, data: d }) => { if (live) { setHomes(ok ? d.results : []); setGroup(ok ? d.group : null); } })
+      .catch(() => { if (live) setHomes([]); });
+    return () => { live = false; };
+  }, [data]);
 
   useGSAP(() => {
     rootRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -65,11 +79,35 @@ export default function Results({ data, kakaoKey }) {
         <CategoryChart categories={data.categories} />
       </Block>
 
+      <Block data-reveal>
+        <h2>이런 집은 어때요?</h2>
+        {homes === null ? (
+          <Hint>주변 1km 건물들의 점수를 계산하고 있어요.</Hint>
+        ) : homes.length === 0 ? (
+          <Hint>주변 1km {group ?? '주거건물'} 중 이 집보다 점수 높은 곳을 찾지 못했어요.</Hint>
+        ) : (
+          <>
+            <Hint>주변 1km {group ?? '주거건물'} 중 이 집보다 생활 점수가 높은 곳이에요. 실제 매물 여부는 따로 확인해 주세요. 누르면 바로 분석해요.</Hint>
+            <Homes>
+              {homes.map((h) => (
+                <li key={h.name}>
+                  <button type="button" onClick={() => onPick(h.address || h.name, h.name)}>
+                    <b>{h.total}<small>점 · {h.grade.grade}</small></b>
+                    <span>{h.name}</span>
+                    <small>{h.distance}m · {h.address}</small>
+                  </button>
+                </li>
+              ))}
+            </Homes>
+          </>
+        )}
+      </Block>
+
       {kakaoKey && (
         <Block data-reveal>
           <h2>지도</h2>
-          <Hint>종류별로 가장 가까운 곳만 표시했어요.</Hint>
-          <KakaoMap appKey={kakaoKey} data={data} />
+          <Hint>종류별로 가장 가까운 곳과 추천 건물(점수)을 표시했어요.</Hint>
+          <KakaoMap appKey={kakaoKey} data={data} homes={homes} />
         </Block>
       )}
 
@@ -212,6 +250,35 @@ const Comment = styled.p`
   margin-top: 2px;
   color: ${color.ink2};
   font-size: 15px;
+`;
+
+const Homes = styled.ul`
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  button {
+    width: 100%;
+    height: 100%;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 1px solid ${color.rule};
+    border-radius: 4px;
+    padding: 12px 14px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    &:hover, &:focus-visible { border-color: ${color.plate}; }
+  }
+  b { font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  b small { font-size: 13px; font-weight: 500; color: ${color.ink2}; margin-left: 2px; }
+  span { font-weight: 700; }
+  > li > button > small { color: ${color.ink2}; font-size: 13px; }
 `;
 
 const Facilities = styled.dl`

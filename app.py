@@ -22,6 +22,7 @@ load_dotenv()
 import json
 import re
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import session
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -43,6 +44,8 @@ if not os.getenv("SECRET_KEY"):
 # 다른 사이트에서 보낸 요청에는 로그인 쿠키를 싣지 않는다 (CSRF 완화)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 db.init()
+
+kakao.POOL.submit(cctv._grid)  # CCTV CSV(38만 행)를 첫 검색 전에 미리 읽어 둔다
 
 KAKAO_API_KEY = os.getenv("KAKAO_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -264,6 +267,7 @@ def analyze():
 
     lat, lng = coords["lat"], coords["lng"]
     is_demo = coords.get("is_demo", not bool(KAKAO_API_KEY))
+    rent_job = kakao.POOL.submit(rent.lookup, coords)  # 실거래 조회(첫 회 2초)를 시설 조회와 동시에
 
     # 2. 주변 시설 조회 — 실패를 '0곳'으로 치면 틀린 점수가 나가므로 차라리 다시 시도하게 한다
     try:
@@ -295,7 +299,7 @@ def analyze():
         "ai_comment": ai_comment,
         "facilities_summary": _facilities_summary(facilities),
         "pins": _map_pins(facilities),
-        "rent": rent.lookup(coords),  # 이 건물 최근 1년 전월세 실거래 (키·활용신청 없으면 None)
+        "rent": rent_job.result(),  # 이 건물 최근 1년 전월세 실거래 (키·활용신청 없으면 None)
         "history_id": history_id,  # 비로그인이면 None → 화면에 ☆ 버튼 없음
         "favorite": favorite,
     })
@@ -342,14 +346,48 @@ def compare():
     return jsonify({"results": results})
 
 
+@app.route("/api/recommend", methods=["POST"])
+def recommend():
+    """
+    주변 같은 종류 주거건물(아파트/원룸·오피스텔/빌라·주택) 중 이 집보다 점수가 높은 곳 (최대 4곳).
+    후보마다 시설을 새로 조회해서 느리므로, 화면은 분석 결과를 먼저 보여주고 이걸 따로 부른다.
+    Body: { lat, lng, total, weights, kind(전월세 유형, 선택) }
+    """
+    data = _body()
+    try:
+        lat, lng, base = float(data["lat"]), float(data["lng"]), float(data["total"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "lat, lng, total이 필요해요."}), 400
+    weights = data.get("weights") or None
+
+    try:
+        kind = data.get("kind")
+        group, homes = kakao.search_homes(lat, lng, kind if isinstance(kind, str) else None)
+    except kakao.FetchError:
+        return jsonify({"error": FETCH_FAIL_MSG}), 503
+
+    def score(p):
+        try:
+            res = scoring.calculate(_get_facilities(p["lat"], p["lng"]), weights)
+        except kakao.FetchError:
+            return None  # 한 곳 실패는 빼고 나머지로 추천한다
+        return {**p, "total": res["total"], "grade": scoring.grade(res["total"])}
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        scored = [s for s in ex.map(score, homes) if s]
+    better = sorted((s for s in scored if s["total"] > base), key=lambda s: -s["total"])[:4]
+    return jsonify({"group": group, "results": better})
+
+
 # ─── 내부 헬퍼 ──────────────────────────────────────────────────────
 
 def _get_facilities(lat: float, lng: float) -> dict:
     """분석·비교가 같은 시설 목록으로 점수를 내도록 한 곳에서 모은다.
     (예전엔 비교 쪽만 버스를 빠뜨려서 같은 주소인데 점수가 달랐다.)
     버스정류장만 제공자가 다르다 — kakao.py 상단 주석 참고."""
+    bus_job = kakao.POOL.submit(bus.search_bus_stops, lat, lng)  # 카카오와 동시에
     facilities = kakao.get_all_facilities(lat, lng)
-    facilities["bus"] = bus.search_bus_stops(lat, lng)
+    facilities["bus"] = bus_job.result()
     facilities["cctv"] = cctv.count_nearby(lat, lng)  # 장소 목록이 아니라 반경 300m 카메라 대수 (파일 없으면 None)
     return facilities
 

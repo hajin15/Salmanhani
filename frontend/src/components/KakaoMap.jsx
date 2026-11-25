@@ -20,7 +20,7 @@ function loadSdk(appKey) {
   return sdkPromise;
 }
 
-export default function KakaoMap({ appKey, data }) {
+export default function KakaoMap({ appKey, data, homes }) {
   const boxRef = useRef(null);
 
   useEffect(() => {
@@ -48,11 +48,23 @@ export default function KakaoMap({ appKey, data }) {
         new kakao.maps.CustomOverlay({ map, position: pos, content: el, yAnchor: 1.2 });
       });
 
+      // 추천 건물: 점수를 크게, 파란 테두리로 시설 핀과 구분
+      (homes || []).forEach((h) => {
+        const pos = new kakao.maps.LatLng(h.lat, h.lng);
+        bounds.extend(pos);
+        const el = document.createElement('div');
+        el.className = 'map-pin map-home';
+        const tag = document.createElement('b');
+        tag.textContent = `${h.total}점`;
+        el.append(tag, h.name);
+        new kakao.maps.CustomOverlay({ map, position: pos, content: el, yAnchor: 1.2 });
+      });
+
       map.setBounds(bounds);
     }).catch(() => {});  // SDK 로드 실패(도메인 미등록 등) → 빈 칸으로 둔다
 
     return () => { cancelled = true; };
-  }, [appKey, data]);
+  }, [appKey, data, homes]);
 
   return <Box ref={boxRef} />;
 }
@@ -75,4 +87,5 @@ const Box = styled.div`
     white-space: nowrap;
   }
   .map-pin b { font-weight: 700; margin-right: 4px; }
+  .map-home { border: 2px solid ${color.plate}; color: ${color.plate}; font-weight: 700; }
 `;
