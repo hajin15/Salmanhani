@@ -268,6 +268,7 @@ def analyze():
     lat, lng = coords["lat"], coords["lng"]
     is_demo = coords.get("is_demo", not bool(KAKAO_API_KEY))
     rent_job = kakao.POOL.submit(rent.lookup, coords)  # 실거래 조회(첫 회 2초)를 시설 조회와 동시에
+    area_job = kakao.POOL.submit(rent.area_rent, coords)
 
     # 2. 주변 시설 조회 — 실패를 '0곳'으로 치면 틀린 점수가 나가므로 차라리 다시 시도하게 한다
     try:
@@ -300,6 +301,7 @@ def analyze():
         "facilities_summary": _facilities_summary(facilities),
         "pins": _map_pins(facilities),
         "rent": rent_job.result(),  # 이 건물 최근 1년 전월세 실거래 (키·활용신청 없으면 None)
+        "area_rent": area_job.result(),  # 이 동네 단독·다가구 원룸 월세 시세
         "history_id": history_id,  # 비로그인이면 None → 화면에 ☆ 버튼 없음
         "favorite": favorite,
     })
@@ -312,36 +314,32 @@ def compare():
     Body: { addresses: ["...", "..."], weights: {...} }
     """
     data = request.get_json(force=True)
-    addresses = data.get("addresses", [])[:3]  # 최대 3개
+    addresses = [a.strip() for a in data.get("addresses", [])[:5] if isinstance(a, str) and a.strip()]  # 최대 5개
     weights = data.get("weights") or None
 
     if not addresses:
         return jsonify({"error": "주소를 입력해주세요."}), 400
 
-    results = []
-    for addr in addresses:
-        addr = addr.strip()
-        if not addr:
-            continue
+    def one(addr):
         coords = kakao.get_coords(addr)
         if not coords:
-            results.append({"address": addr, "error": "주소를 찾을 수 없어요."})
-            continue
-
+            return {"address": addr, "error": "주소를 찾을 수 없어요."}
         try:
             facilities = _get_facilities(coords["lat"], coords["lng"])
         except kakao.FetchError:
-            results.append({"address": addr, "error": FETCH_FAIL_MSG})
-            continue
-        res =scoring.calculate(facilities, weights)
-        g = scoring.grade(res["total"])
-
-        results.append({
+            return {"address": addr, "error": FETCH_FAIL_MSG}
+        res = scoring.calculate(facilities, weights)
+        return {
             "address": coords.get("road_address") or addr,
             "total": res["total"],
-            "grade": g,
+            "grade": scoring.grade(res["total"]),
             "categories": res["categories"],
-        })
+        }
+
+    # 주소끼리 동시에 (5개를 차례로 하면 7초쯤). kakao.POOL이 아닌 별도 풀 — 안에서 POOL을 기다리므로.
+    # 결과는 보낸 순서 그대로다 (화면이 같은 인덱스에 가격을 붙인다).
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        results = list(ex.map(one, addresses))
 
     return jsonify({"results": results})
 

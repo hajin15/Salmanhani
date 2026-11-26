@@ -46,7 +46,6 @@ function MyHome({ user, active, go, onLogout }) {
 
       <Menu>
         <li><button onClick={() => go('my/weights')}>내 기본 중요도 설정<span aria-hidden="true">›</span></button></li>
-        <li><button disabled>출퇴근지 등록 <Small as="span">준비 중</Small></button></li>
       </Menu>
       <Menu>
         <li><button onClick={() => go('my/account')}>계정 관리<span aria-hidden="true">›</span></button></li>

@@ -177,12 +177,14 @@ def search_nearby_keyword(lat: float, lng: float, category_key: str, radius: int
     return [p for p in places if must in p["category"]] if must else places
 
 
-# 카카오 '부동산 > 주거시설 > X'의 X → 추천 그룹. 카카오엔 '원룸' 분류가 없어(키워드도 0건)
-# 오피스텔·도시형생활주택(대부분 원룸형)을 묶는다. 다가구 원룸은 '빌라,주택'으로 잡힌다.
-HOME_GROUP = {"아파트": "아파트", "오피스텔": "원룸·오피스텔", "도시형생활주택": "원룸·오피스텔", "빌라,주택": "빌라·주택"}
+# 카카오 '부동산 > 주거시설 > X'의 X → 추천 그룹. 자취방 기준이라 아파트 / 그 외(원룸) 둘로만 나눈다.
+# 카카오엔 '원룸' 분류가 없고, 원룸촌 다가구는 '빌라,주택'으로 잡힌다. 예전엔 오피스텔·빌라를 따로 나눴더니
+# 원룸촌(덕명동 600-1) 바로 옆 오피스텔 하나 때문에 '오피스텔' 그룹이 되어 주변 빌라 원룸 40곳을 다 놓쳤다.
+ONEROOM = "원룸·오피스텔·빌라"
+HOME_GROUP = {"아파트": "아파트", "오피스텔": ONEROOM, "도시형생활주택": ONEROOM, "빌라,주택": ONEROOM}
 HOME_QUERIES = ("아파트", "오피스텔", "도시형생활주택", "빌라")
 # 전월세 실거래 유형(rent.py) → 추천 그룹
-RENT_GROUP = {"아파트": "아파트", "오피스텔": "원룸·오피스텔", "연립다세대": "빌라·주택"}
+RENT_GROUP = {"아파트": "아파트", "오피스텔": ONEROOM, "연립다세대": ONEROOM}
 
 
 def _home_group(category: str) -> str | None:

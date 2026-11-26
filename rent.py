@@ -11,6 +11,7 @@ API는 '시군구 + 계약월' 단위로만 준다. 최근 12개월 × 건물 �
 
 import os
 import datetime
+import statistics
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
@@ -98,6 +99,47 @@ def lookup(coords: dict) -> dict | None:
     return summarize(deals)
 
 
+# 단독·다가구는 지번을 가려서 공개 → 건물 단위는 못 찾고, '이 동네 원룸 시세'로 쓴다
+SH = "RTMSDataSvcSHRent/getRTMSDataSvcSHRent"
+ONEROOM_MAX_AREA = 40  # ㎡. 다가구 원룸·투룸 소형 계약만 남긴다
+
+
+def area_rent(coords: dict) -> dict | None:
+    """같은 법정동 단독·다가구 소형 월세 시세 (최근 1년). 모르면 None"""
+    b_code, dong = coords.get("b_code"), coords.get("dong")
+    if not (API_KEY and b_code and dong):
+        return None
+    try:
+        with ThreadPoolExecutor(max_workers=12) as ex:
+            pages = list(ex.map(lambda ym: _month(SH, b_code[:5], ym), _months(datetime.date.today())))
+    except (requests.RequestException, ET.ParseError, ValueError):
+        return None
+    deals = [
+        (int(_num(it.get("deposit"))), int(_num(it.get("monthlyRent"))))
+        for items in pages for it in items
+        if it.get("umdNm") == dong and _num(it.get("monthlyRent")) > 0
+        and 0 < _num(it.get("totalFloorAr")) <= ONEROOM_MAX_AREA
+    ]
+    return summarize_area(dong, deals)
+
+
+def summarize_area(dong: str, deals: list) -> dict:
+    """(보증금, 월세) 목록 → 중앙값·보통 범위. 큰 평수·반전세 몇 건에 평균이 튀어서 중앙값을 쓴다."""
+    if len(deals) < 3:  # 너무 적으면 시세라고 부르기 어렵다
+        return {"dong": dong, "count": len(deals)}
+    deposits = [d for d, _ in deals]
+    rents = [r for _, r in deals]
+    q1, _, q3 = statistics.quantiles(rents, n=4)
+    return {
+        "dong": dong,
+        "count": len(deals),
+        "deposit_median": round(statistics.median(deposits)),
+        "rent_median": round(statistics.median(rents)),
+        "rent_q1": round(q1),  # 가운데 50% 거래의 월세 범위
+        "rent_q3": round(q3),
+    }
+
+
 def summarize(deals: list) -> dict:
     deals = sorted(deals, key=lambda d: d["date"], reverse=True)
     monthly = [d for d in deals if d["rent"] > 0]
@@ -134,4 +176,8 @@ if __name__ == "__main__":
     assert s["jeonse"] == {"count": 1, "deposit_avg": 12000}
     assert summarize([])["monthly"] is None
     assert _months(datetime.date(2026, 2, 5))[:3] == ["202602", "202601", "202512"]
+    a = summarize_area("X", [(500, 40), (500, 45), (1000, 50), (300, 45), (5000, 20)])
+    assert a["rent_median"] == 45 and a["deposit_median"] == 500 and a["count"] == 5, a
+    assert a["rent_q1"] <= 45 <= a["rent_q3"]
+    assert summarize_area("X", [(500, 40)]) == {"dong": "X", "count": 1}
     print("ok")

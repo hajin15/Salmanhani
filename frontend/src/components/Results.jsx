@@ -123,6 +123,7 @@ export default function Results({ data, kakaoKey, onPick }) {
         </Facilities>
       </Block>
 
+      {data.area_rent && <AreaRent a={data.area_rent} />}
       {data.rent && <RentHistory rent={data.rent} />}
     </div>
   );
@@ -130,6 +131,32 @@ export default function Results({ data, kakaoKey, onPick }) {
 
 // 만원 단위 → "1억 2,000" / "1,000"
 const won = (m) => (m >= 10000 ? `${Math.floor(m / 10000)}억${m % 10000 ? ` ${(m % 10000).toLocaleString()}` : ''}` : m.toLocaleString());
+
+// 이 동네 다가구 원룸 시세: 자취생이 제일 많이 사는 단독·다가구는 건물 단위 실거래가 안 나와서 동 단위로 보여준다
+function AreaRent({ a }) {
+  return (
+    <Block data-reveal>
+      <h2>{a.dong} 원룸 월세 시세</h2>
+      {a.count < 3 ? (
+        <Hint>최근 1년 이 동네 단독·다가구 원룸 월세 거래가 너무 적어서 시세를 내기 어려워요.</Hint>
+      ) : (
+        <>
+          <Hint>단독·다가구 40㎡ 이하 월세 계약 {a.count}건 · 최근 1년 · 국토교통부 신고 기준</Hint>
+          <Facilities>
+            <div>
+              <dt>보통 시세 (중앙값)</dt>
+              <dd>보증금 {won(a.deposit_median)} / 월 {a.rent_median}만</dd>
+            </div>
+            <div>
+              <dt>흔한 월세 범위</dt>
+              <dd>월 {a.rent_q1}~{a.rent_q3}만</dd>
+            </div>
+          </Facilities>
+        </>
+      )}
+    </Block>
+  );
+}
 
 function RentHistory({ rent }) {
   const { monthly, jeonse } = rent;

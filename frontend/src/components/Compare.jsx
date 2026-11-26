@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import styled from '@emotion/styled';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { Block, Button, Hint, NumberInput, TextInput, color } from '../styles.jsx';
+import { Block, Button, Hint, LinkButton, NumberInput, TextInput, color } from '../styles.jsx';
 import { CATEGORY_LABELS, dur, monthlyCost, parsePrice, postJSON } from '../lib.js';
 
-const PLACEHOLDERS = ['집 1 (지금 본 주소)', '집 2', '집 3 (선택)'];
+const MAX = 5;
+const placeholder = (i) => (i === 0 ? '집 1 (지금 본 주소)' : i === 1 ? '집 2' : `집 ${i + 1} (선택)`);
 const EMPTY = { address: '', deposit: '', rent: '' };
 const won = (n) => Math.round(n).toLocaleString('ko-KR');
 const short = (a) => (!a ? '주소 오류' : a.length > 12 ? `${a.slice(0, 12)}…` : a);
@@ -61,7 +62,7 @@ export default function Compare({ firstAddress, weights }) {
               type="text"
               value={e.address}
               onChange={(ev) => edit(i, 'address', ev.target.value)}
-              placeholder={PLACEHOLDERS[i]}
+              placeholder={placeholder(i)}
               aria-label={`집 ${i + 1} 주소`}
             />
             <PriceRow>
@@ -73,7 +74,12 @@ export default function Compare({ firstAddress, weights }) {
           </Entry>
         ))}
       </Inputs>
-      <Button secondary onClick={compare} disabled={busy} style={{ marginTop: 10 }}>
+      {entries.length < MAX && (
+        <LinkButton type="button" onClick={() => setEntries((es) => [...es, EMPTY])}>
+          + 집 추가 ({entries.length}/{MAX})
+        </LinkButton>
+      )}
+      <Button secondary onClick={compare} disabled={busy} style={{ marginTop: 10, display: 'block' }}>
         {busy ? '비교 중...' : '비교하기'}
       </Button>
 
@@ -180,6 +186,16 @@ const TableWrap = styled.div`
   table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
   th, td { padding: 10px 8px; text-align: right; border-bottom: 1px solid ${color.rule}; }
   th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  /* 집이 4~5개면 모바일에서 표가 옆으로 넘친다 → 항목 이름 열은 고정하고 나머지만 스크롤 */
+  th:first-child, td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: ${color.paper};
+    padding-right: 10px;
+    white-space: nowrap;
+  }
+  thead th { white-space: nowrap; }
   thead th { font-weight: 500; border-bottom: 2px solid ${color.ink}; }
   .error { color: ${color.alert}; }
   .best { color: ${color.plate}; font-weight: 700; }

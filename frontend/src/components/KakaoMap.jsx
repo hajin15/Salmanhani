@@ -34,7 +34,17 @@ export default function KakaoMap({ appKey, data, homes }) {
       const bounds = new kakao.maps.LatLngBounds();
       bounds.extend(center);
 
-      new kakao.maps.Marker({ map, position: center, title: data.address });
+      // 검색한 집: 기본 마커는 시설 핀들 사이에 묻혀서, 채운 라벨 + 반경 원으로 맨 위에 띄운다
+      new kakao.maps.Marker({ map, position: center, title: data.address, zIndex: 10 });
+      const here = document.createElement('div');
+      here.className = 'map-here';
+      here.textContent = '검색한 집';
+      new kakao.maps.CustomOverlay({ map, position: center, content: here, yAnchor: 2.6, zIndex: 10 });
+      new kakao.maps.Circle({
+        map, center, radius: 60,
+        strokeWeight: 2, strokeColor: color.plate, strokeOpacity: 0.9,
+        fillColor: color.plate, fillOpacity: 0.15,
+      });
 
       (data.pins || []).forEach((p) => {
         const pos = new kakao.maps.LatLng(p.lat, p.lng);
@@ -87,5 +97,26 @@ const Box = styled.div`
     white-space: nowrap;
   }
   .map-pin b { font-weight: 700; margin-right: 4px; }
+  .map-here {
+    position: relative;
+    background: ${color.plate};
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+  .map-here::after {  /* 아래쪽 꼬리: 마커를 가리킨다 */
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    margin-left: -6px;
+    border: 6px solid transparent;
+    border-bottom: 0;
+    border-top-color: ${color.plate};
+  }
   .map-home { border: 2px solid ${color.plate}; color: ${color.plate}; font-weight: 700; }
 `;
