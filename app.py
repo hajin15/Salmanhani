@@ -22,12 +22,15 @@ load_dotenv()
 import json
 import re
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import kakao
 import bus
+import cctv
+import rent
 import scoring
 import db
 
@@ -41,6 +44,8 @@ if not os.getenv("SECRET_KEY"):
 # 다른 사이트에서 보낸 요청에는 로그인 쿠키를 싣지 않는다 (CSRF 완화)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 db.init()
+
+kakao.POOL.submit(cctv._grid)  # CCTV CSV(38만 행)를 첫 검색 전에 미리 읽어 둔다
 
 KAKAO_API_KEY = os.getenv("KAKAO_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -262,6 +267,8 @@ def analyze():
 
     lat, lng = coords["lat"], coords["lng"]
     is_demo = coords.get("is_demo", not bool(KAKAO_API_KEY))
+    rent_job = kakao.POOL.submit(rent.lookup, coords)  # 실거래 조회(첫 회 2초)를 시설 조회와 동시에
+    area_job = kakao.POOL.submit(rent.area_rent, coords)
 
     # 2. 주변 시설 조회 — 실패를 '0곳'으로 치면 틀린 점수가 나가므로 차라리 다시 시도하게 한다
     try:
@@ -293,6 +300,8 @@ def analyze():
         "ai_comment": ai_comment,
         "facilities_summary": _facilities_summary(facilities),
         "pins": _map_pins(facilities),
+        "rent": rent_job.result(),  # 이 건물 최근 1년 전월세 실거래 (키·활용신청 없으면 None)
+        "area_rent": area_job.result(),  # 이 동네 단독·다가구 원룸 월세 시세
         "history_id": history_id,  # 비로그인이면 None → 화면에 ☆ 버튼 없음
         "favorite": favorite,
     })
@@ -305,38 +314,67 @@ def compare():
     Body: { addresses: ["...", "..."], weights: {...} }
     """
     data = request.get_json(force=True)
-    addresses = data.get("addresses", [])[:3]  # 최대 3개
+    addresses = [a.strip() for a in data.get("addresses", [])[:5] if isinstance(a, str) and a.strip()]  # 최대 5개
     weights = data.get("weights") or None
 
     if not addresses:
         return jsonify({"error": "주소를 입력해주세요."}), 400
 
-    results = []
-    for addr in addresses:
-        addr = addr.strip()
-        if not addr:
-            continue
+    def one(addr):
         coords = kakao.get_coords(addr)
         if not coords:
-            results.append({"address": addr, "error": "주소를 찾을 수 없어요."})
-            continue
-
+            return {"address": addr, "error": "주소를 찾을 수 없어요."}
         try:
             facilities = _get_facilities(coords["lat"], coords["lng"])
         except kakao.FetchError:
-            results.append({"address": addr, "error": FETCH_FAIL_MSG})
-            continue
-        res =scoring.calculate(facilities, weights)
-        g = scoring.grade(res["total"])
-
-        results.append({
+            return {"address": addr, "error": FETCH_FAIL_MSG}
+        res = scoring.calculate(facilities, weights)
+        return {
             "address": coords.get("road_address") or addr,
             "total": res["total"],
-            "grade": g,
+            "grade": scoring.grade(res["total"]),
             "categories": res["categories"],
-        })
+        }
+
+    # 주소끼리 동시에 (5개를 차례로 하면 7초쯤). kakao.POOL이 아닌 별도 풀 — 안에서 POOL을 기다리므로.
+    # 결과는 보낸 순서 그대로다 (화면이 같은 인덱스에 가격을 붙인다).
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        results = list(ex.map(one, addresses))
 
     return jsonify({"results": results})
+
+
+@app.route("/api/recommend", methods=["POST"])
+def recommend():
+    """
+    주변 같은 종류 주거건물(아파트/원룸·오피스텔/빌라·주택) 중 이 집보다 점수가 높은 곳 (최대 4곳).
+    후보마다 시설을 새로 조회해서 느리므로, 화면은 분석 결과를 먼저 보여주고 이걸 따로 부른다.
+    Body: { lat, lng, total, weights, kind(전월세 유형, 선택) }
+    """
+    data = _body()
+    try:
+        lat, lng, base = float(data["lat"]), float(data["lng"]), float(data["total"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "lat, lng, total이 필요해요."}), 400
+    weights = data.get("weights") or None
+
+    try:
+        kind = data.get("kind")
+        group, homes = kakao.search_homes(lat, lng, kind if isinstance(kind, str) else None)
+    except kakao.FetchError:
+        return jsonify({"error": FETCH_FAIL_MSG}), 503
+
+    def score(p):
+        try:
+            res = scoring.calculate(_get_facilities(p["lat"], p["lng"]), weights)
+        except kakao.FetchError:
+            return None  # 한 곳 실패는 빼고 나머지로 추천한다
+        return {**p, "total": res["total"], "grade": scoring.grade(res["total"])}
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        scored = [s for s in ex.map(score, homes) if s]
+    better = sorted((s for s in scored if s["total"] > base), key=lambda s: -s["total"])[:4]
+    return jsonify({"group": group, "results": better})
 
 
 # ─── 내부 헬퍼 ──────────────────────────────────────────────────────
@@ -345,8 +383,10 @@ def _get_facilities(lat: float, lng: float) -> dict:
     """분석·비교가 같은 시설 목록으로 점수를 내도록 한 곳에서 모은다.
     (예전엔 비교 쪽만 버스를 빠뜨려서 같은 주소인데 점수가 달랐다.)
     버스정류장만 제공자가 다르다 — kakao.py 상단 주석 참고."""
+    bus_job = kakao.POOL.submit(bus.search_bus_stops, lat, lng)  # 카카오와 동시에
     facilities = kakao.get_all_facilities(lat, lng)
-    facilities["bus"] = bus.search_bus_stops(lat, lng)
+    facilities["bus"] = bus_job.result()
+    facilities["cctv"] = cctv.count_nearby(lat, lng)  # 장소 목록이 아니라 반경 300m 카메라 대수 (파일 없으면 None)
     return facilities
 
 
@@ -365,6 +405,8 @@ def _facilities_summary(facilities: dict) -> dict:
         "restaurant":  len([r for r in facilities.get("restaurant", []) if r["distance"] <= 500]),
         "hospital":    closest_name(facilities.get("hospital", [])),
         "gym":         closest_name(facilities.get("gym", [])),
+        "police":      closest_name(facilities.get("police", [])),
+        "cctv":        facilities.get("cctv"),
     }
 
 
@@ -372,6 +414,8 @@ def _map_pins(facilities: dict) -> list:
     """지도 핀: 카테고리마다 가장 가까운 1곳 (점수도 최근접 거리 기준이라 화면과 맞는다)"""
     pins = []
     for key, places in facilities.items():
+        if not isinstance(places, list):  # cctv는 대수(숫자)
+            continue
         places = [p for p in places if "lat" in p]
         if places:
             p = min(places, key=lambda x: x["distance"])
@@ -434,4 +478,6 @@ if __name__ == "__main__":
     print(f"\n🏠 살만하니 서버 시작 → http://localhost:{port}")
     if not KAKAO_API_KEY:
         print("⚠️  카카오 API 키 없음 → 데모 모드로 실행됩니다.")
+    if cctv._grid() is None:  # 첫 분석이 몇 초 멈추지 않게 미리 읽어 둔다
+        print("⚠️  data/cctv.csv 없음 → 야간 안전은 지구대·편의점만으로 계산합니다.")
     app.run(debug=True, host="0.0.0.0", port=port)

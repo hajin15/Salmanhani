@@ -195,26 +195,34 @@ def _score_leisure(facilities: dict) -> float:
     return gs
 
 
+def _step(value: float, table: list) -> float:
+    """(기준, 점수) 표를 위에서부터 보고 처음 넘는 기준의 점수. 못 넘으면 마지막 점수."""
+    for cut, score in table:
+        if value >= cut:
+            return score
+    return table[-1][1]
+
+
 def _score_safety(facilities: dict) -> float:
     """
-    야간 안전: 편의점 밀도(불 켜진 가게)를 야간 안전 대리 지표로 사용.
-    편의점은 24h 영업 + 밝은 조명 → 야간 안전도와 상관관계
+    야간 안전 = CCTV 40% + 지구대·파출소 30% + 편의점 밀도 30%.
+    편의점은 24h 영업 + 밝은 조명이라 불 켜진 거리의 대리 지표.
+    CCTV 파일이 없으면(cctv=None) 지구대 50% + 편의점 50%.
     """
-    conv = facilities.get("convenience", [])
-    near = _count_within(conv, 500)
+    conv = _step(_count_within(facilities.get("convenience", []), 500),
+                 [(10, 1.0), (7, 0.85), (5, 0.7), (3, 0.5), (1, 0.3), (0, 0.05)])
 
-    if near >= 10:
-        return 1.00
-    elif near >= 7:
-        return 0.85
-    elif near >= 5:
-        return 0.70
-    elif near >= 3:
-        return 0.50
-    elif near >= 1:
-        return 0.30
-    else:
-        return 0.05
+    # 가까울수록 좋으니 거리에 -를 붙여 같은 표 함수를 쓴다. 1.5km 안에 없으면 0.1
+    d = _closest(facilities.get("police", []))
+    police = 0.1 if d is None else _step(-d, [(-300, 1.0), (-600, 0.8), (-1000, 0.6), (-1500, 0.4), (float("-inf"), 0.2)])
+
+    cams = facilities.get("cctv")
+    if cams is None:
+        return round(0.5 * police + 0.5 * conv, 3)
+    # 반경 300m 카메라 대수. 표본: 노원 19, 건대 33, 강남역 84, 신촌 127
+    # ponytail: 지자체마다 등록 범위가 달라 지방은 낮게 나온다 (대전 시내 5). 지역별 보정은 불만 나오면.
+    cctv = _step(cams, [(80, 1.0), (50, 0.85), (30, 0.7), (15, 0.5), (5, 0.3), (0, 0.1)])
+    return round(0.4 * cctv + 0.3 * police + 0.3 * conv, 3)
 
 
 # ─── 종합 점수 계산 ─────────────────────────────────────────────────

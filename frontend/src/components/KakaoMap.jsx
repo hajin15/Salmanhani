@@ -4,7 +4,7 @@ import { color } from '../styles.jsx';
 
 const PIN_LABELS = {
   subway: '지하철', bus: '버스', convenience: '편의점', mart: '마트', restaurant: '음식점',
-  cafe: '카페', hospital: '병원', pharmacy: '약국', gym: '헬스장',
+  cafe: '카페', hospital: '병원', pharmacy: '약국', gym: '헬스장', police: '지구대',
 };
 
 // SDK는 처음 지도를 그릴 때 한 번만 불러온다
@@ -20,7 +20,7 @@ function loadSdk(appKey) {
   return sdkPromise;
 }
 
-export default function KakaoMap({ appKey, data }) {
+export default function KakaoMap({ appKey, data, homes }) {
   const boxRef = useRef(null);
 
   useEffect(() => {
@@ -34,7 +34,17 @@ export default function KakaoMap({ appKey, data }) {
       const bounds = new kakao.maps.LatLngBounds();
       bounds.extend(center);
 
-      new kakao.maps.Marker({ map, position: center, title: data.address });
+      // 검색한 집: 기본 마커는 시설 핀들 사이에 묻혀서, 채운 라벨 + 반경 원으로 맨 위에 띄운다
+      new kakao.maps.Marker({ map, position: center, title: data.address, zIndex: 10 });
+      const here = document.createElement('div');
+      here.className = 'map-here';
+      here.textContent = '검색한 집';
+      new kakao.maps.CustomOverlay({ map, position: center, content: here, yAnchor: 2.6, zIndex: 10 });
+      new kakao.maps.Circle({
+        map, center, radius: 60,
+        strokeWeight: 2, strokeColor: color.plate, strokeOpacity: 0.9,
+        fillColor: color.plate, fillOpacity: 0.15,
+      });
 
       (data.pins || []).forEach((p) => {
         const pos = new kakao.maps.LatLng(p.lat, p.lng);
@@ -48,11 +58,23 @@ export default function KakaoMap({ appKey, data }) {
         new kakao.maps.CustomOverlay({ map, position: pos, content: el, yAnchor: 1.2 });
       });
 
+      // 추천 건물: 점수를 크게, 파란 테두리로 시설 핀과 구분
+      (homes || []).forEach((h) => {
+        const pos = new kakao.maps.LatLng(h.lat, h.lng);
+        bounds.extend(pos);
+        const el = document.createElement('div');
+        el.className = 'map-pin map-home';
+        const tag = document.createElement('b');
+        tag.textContent = `${h.total}점`;
+        el.append(tag, h.name);
+        new kakao.maps.CustomOverlay({ map, position: pos, content: el, yAnchor: 1.2 });
+      });
+
       map.setBounds(bounds);
     }).catch(() => {});  // SDK 로드 실패(도메인 미등록 등) → 빈 칸으로 둔다
 
     return () => { cancelled = true; };
-  }, [appKey, data]);
+  }, [appKey, data, homes]);
 
   return <Box ref={boxRef} />;
 }
@@ -75,4 +97,26 @@ const Box = styled.div`
     white-space: nowrap;
   }
   .map-pin b { font-weight: 700; margin-right: 4px; }
+  .map-here {
+    position: relative;
+    background: ${color.plate};
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+  .map-here::after {  /* 아래쪽 꼬리: 마커를 가리킨다 */
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -6px;
+    margin-left: -6px;
+    border: 6px solid transparent;
+    border-bottom: 0;
+    border-top-color: ${color.plate};
+  }
+  .map-home { border: 2px solid ${color.plate}; color: ${color.plate}; font-weight: 700; }
 `;
