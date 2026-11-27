@@ -1,0 +1,26 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+.DS_Store
+*.db
+data/
+docs/
+.superpowers/
+frontend/node_modules/
+frontend/dist/
+# 발표 자료·다른 과목·팀원 전달본 (이미지에 필요 없음)
+*.pdf
+*.pptx
+Claude outputs/
+알고리즘_실습5주차/
+salmanhani-docker-delivery/

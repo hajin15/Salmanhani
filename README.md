@@ -40,7 +40,22 @@
 
 등급: S(90+), A(80+), B(70+), C(60+), D(50+), F(50 미만)
 
-## 실행 방법
+## 실행 방법 (Docker)
+
+Docker Desktop을 켜고, `.env`를 만든 뒤(`cp .env.example .env`) 프로젝트 폴더에서:
+
+```bash
+docker compose up -d --build   # http://localhost:5000
+docker compose logs -f         # 로그 보기
+docker compose down            # 끄기 (회원·기록 DB는 볼륨에 남음)
+```
+
+- 1단계에서 Node가 React 화면을 빌드하고, 2단계 Python 이미지가 그 결과를 Gunicorn(워커 2개)으로 서빙합니다.
+- 회원 DB는 `salmanhani-data` 볼륨(`/app/data`)에 저장됩니다.
+- `data/cctv.csv`는 이미지에 넣지 않고 읽기 전용으로 연결합니다. 파일이 없으면 야간 안전은 지구대·편의점만으로 계산합니다.
+- 로컬에서 `python app.py`가 이미 5000번을 쓰고 있으면 `HOST_PORT=5050 docker compose up -d`로 다른 포트에 띄우세요.
+
+## 실행 방법 (로컬 직접 실행)
 
 ```bash
 pip install -r requirements.txt

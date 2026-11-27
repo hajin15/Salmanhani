@@ -124,7 +124,7 @@ export default function Results({ data, kakaoKey, onPick }) {
       </Block>
 
       {data.area_rent && <AreaRent a={data.area_rent} />}
-      {data.rent && <RentHistory rent={data.rent} />}
+      {data.rent?.count > 0 && <RentHistory rent={data.rent} />}
     </div>
   );
 }
@@ -163,11 +163,7 @@ function RentHistory({ rent }) {
   return (
     <Block data-reveal>
       <h2>최근 1년 전월세 실거래</h2>
-      {rent.count === 0 ? (
-        <Hint>이 건물은 최근 1년 신고된 전월세 거래가 없어요. (단독·다가구는 건물 단위로 공개되지 않아요)</Hint>
-      ) : (
-        <>
-          <Hint>{rent.name} · {rent.kind} · 국토교통부 신고 기준</Hint>
+      <Hint>{rent.name} · {rent.kind} · 국토교통부 신고 기준</Hint>
           <Facilities>
             {monthly && (
               <div>
@@ -191,8 +187,6 @@ function RentHistory({ rent }) {
               </div>
             ))}
           </Facilities>
-        </>
-      )}
     </Block>
   );
 }

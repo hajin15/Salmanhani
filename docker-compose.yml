@@ -1,0 +1,27 @@
+services:
+  web:
+    build:
+      context: .
+    container_name: salmanhani-web
+    env_file:
+      - .env
+    environment:
+      - DB_PATH=/app/data/salmanhi.db
+      - CCTV_CSV=/app/cctv/cctv.csv
+    volumes:
+      - salmanhani-data:/app/data
+      # CCTV 파일(80MB)은 이미지에 굽지 않고 읽기 전용으로 연결. 없으면 야간 안전은 지구대·편의점만으로 계산
+      - ./data/cctv.csv:/app/cctv/cctv.csv:ro
+    ports:
+      - "${HOST_PORT:-5000}:5000"  # 로컬 서버가 5000을 쓰는 중이면 HOST_PORT=5050 docker compose up
+    restart: unless-stopped
+    init: true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  salmanhani-data:

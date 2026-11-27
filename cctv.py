@@ -23,7 +23,7 @@ def _cell(lat: float, lng: float) -> tuple:
 @lru_cache(maxsize=1)
 def _grid() -> dict | None:
     """첫 호출 때 한 번만 읽는다 (약 38만 행, 몇 초)."""
-    if not os.path.exists(CSV_PATH):
+    if not os.path.isfile(CSV_PATH):  # Docker는 없는 파일을 연결하면 빈 폴더를 만든다
         return None
     grid = {}
     with open(CSV_PATH, encoding="cp949", errors="replace", newline="") as f:
